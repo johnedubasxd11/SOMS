@@ -10,6 +10,8 @@ import {
   CalendarRange,
   CheckCheck,
   ClipboardCheck,
+  FileSpreadsheet,
+  FileStack,
   FileText,
   FolderOpen,
   GitBranch,
@@ -18,8 +20,10 @@ import {
   ListChecks,
   LogOut,
   MapPin,
+  Megaphone,
   Menu,
   ScrollText,
+  Search,
   Stamp,
   UserCog,
   UserRound,
@@ -63,6 +67,9 @@ const ICONS: Record<string, LucideIcon> = {
   CalendarDays,
   MapPin,
   ScrollText,
+  Megaphone,
+  FileSpreadsheet,
+  FileStack,
 };
 
 export interface ShellNavItem {
@@ -293,7 +300,39 @@ export function AppShell({
             <p className="text-sm font-semibold">SOMS</p>
           </div>
 
-          <div className="ml-auto flex items-center gap-1">
+          <form
+            action="/search"
+            method="get"
+            className="ml-auto hidden items-center gap-2 md:flex"
+          >
+            <input
+              type="search"
+              name="q"
+              placeholder="Search…"
+              aria-label="Search SOMS"
+              className="h-9 w-44 rounded-md border bg-background px-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring lg:w-56"
+            />
+            <Button
+              type="submit"
+              variant="ghost"
+              size="icon"
+              aria-label="Search"
+              className="shrink-0"
+            >
+              <Search />
+            </Button>
+          </form>
+          <Link
+            href="/search"
+            className="ml-auto md:hidden"
+            aria-label="Search"
+          >
+            <Button variant="ghost" size="icon">
+              <Search />
+            </Button>
+          </Link>
+
+          <div className="flex items-center gap-1">
             <NotificationBell
               userId={profile.id}
               initialUnread={unreadNotifications}

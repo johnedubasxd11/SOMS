@@ -261,6 +261,42 @@ async function main(): Promise<void> {
     console.log('sample announcement inserted');
   }
 
+  // -- 3b. Sample template (needs the OSA profile) ---------------------------
+  // Idempotent on its own so re-running heals a database seeded earlier.
+  const { data: existingTemplates } = await db.from('templates').select('id').limit(1);
+  if (!existingTemplates?.length) {
+    const templateId = crypto.randomUUID();
+    const templatePdf = Buffer.from(
+      '%PDF-1.4\n% SOMS sample Activity Proposal Form template\n%%EOF\n'
+    );
+    const templatePath = `${templateId}/activity-proposal-form.pdf`;
+    const { error: et } = await db.storage
+      .from('templates')
+      .upload(templatePath, templatePdf, {
+        contentType: 'application/pdf',
+        upsert: false,
+      });
+    if (et && !/already exists/i.test(et.message)) {
+      throw new Error(`template upload: ${et.message}`);
+    }
+    const { error: ei } = await db.from('templates').insert({
+      id: templateId,
+      name: 'Activity Proposal Form',
+      description:
+        'Official OSA activity proposal form - fill this out before drafting in SOMS.',
+      category: 'proposal_form',
+      storage_path: templatePath,
+      file_name: 'activity-proposal-form.pdf',
+      mime_type: 'application/pdf',
+      size_bytes: templatePdf.length,
+      version: 1,
+      is_active: true,
+      uploaded_by: osaId,
+    });
+    if (ei) throw new Error(`template: ${ei.message}`);
+    console.log('sample template uploaded');
+  }
+
   // -- 4. Sample submissions (only once) ------------------------------------
   const { data: existing } = await db.from('activity_proposals').select('id').limit(1);
   if (existing?.length) {

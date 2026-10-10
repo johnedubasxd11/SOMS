@@ -6,8 +6,10 @@
 // adviser endorsement, dean approval, OSA decision (Phase 8 approval chains),
 // plus the spec checkpoints: venue conflict warning + refusal, the /calendar
 // board, the OSA venue manager, and attachment versioning where the previous
-// file stays downloadable (Phase 9) - driven through a real browser
-// (Microsoft Edge via playwright-core).
+// file stays downloadable (Phase 9); then the Phase 7 template library +
+// version history, the announcement board with audience targeting, and the
+// Phase 8 global search box - driven through a real browser (Microsoft Edge
+// via playwright-core).
 //
 //   npm run dev            # in one terminal
 //   node scripts/e2e-smoke.mjs
@@ -41,6 +43,10 @@ let smokeDocumentUrl = null;
 
 /** Phase 5 throwaway requirement (removed at the end). */
 let smokeRequirementTitle = null;
+
+/** Phase 7 throwaway template + announcement (removed at the end). */
+const SMOKE_TEMPLATE_NAME = 'Smoke Template';
+const SMOKE_ANNOUNCEMENT_TITLE = 'Smoke Bulletin';
 
 /** Original A Squad membership figure (the org edit check overwrites it). */
 let organizationMembership = null;
@@ -1284,6 +1290,246 @@ try {
     page.url().includes('/reviews'),
     page.url()
   );
+
+  // ---- 18. Phase 7 - template library ---------------------------------------
+  // Section 17 leaves the browser signed in as the dean; OSA manages templates.
+  await signOut(page);
+  await signIn(page, 'osa.admin@acd.edu.ph');
+  await page.goto(`${BASE}/osa/templates`, { waitUntil: 'networkidle' });
+  check(
+    'OSA can open the template library',
+    (await page.locator('main').innerText()).includes('Template library')
+  );
+
+  // Upload the first version of a new template.
+  await page.getByRole('button', { name: 'Upload template' }).click();
+  await page.fill('#template-name', 'Smoke Template');
+  await page.fill('#template-description', 'e2e throwaway template');
+  await page.setInputFiles('#template-file', {
+    name: 'smoke-template.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n% SOMS template smoke v1\n%%EOF\n'),
+  });
+  const uploadDialog = page.locator('[role="dialog"]');
+  await uploadDialog.getByRole('button', { name: 'Upload', exact: true }).click();
+  // The dialog closes only after the server action succeeds.
+  await uploadDialog.waitFor({ state: 'detached', timeout: 30000 });
+  await page.waitForSelector('text=Smoke Template', { timeout: 30000 });
+  check(
+    'template listed after upload with the v1 badge',
+    (await page.locator('text=Smoke Template').count()) >= 1 &&
+      (await page.locator('text=v1').count()) >= 1
+  );
+
+  const templateHrefs = await page
+    .locator('a[href^="/api/templates/"]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('href')));
+  check(
+    'template download link points at /api/templates/',
+    templateHrefs.length >= 1,
+    `${templateHrefs.length} links`
+  );
+  const templateResponse = await page.request.get(`${BASE}${templateHrefs[0]}`);
+  check(
+    'template is served through a signed URL',
+    templateResponse.status() === 200,
+    `status ${templateResponse.status()}`
+  );
+
+  // Supersede with v2 - the old version stays downloadable. Scope every
+  // interaction to the Smoke Template group: the seeded template sorts
+  // first and has its own "New version" button.
+  const smokeGroup = page.locator('div.rounded-lg.border').filter({
+    has: page.locator('p', { hasText: /^Smoke Template$/ }),
+  });
+  await smokeGroup.getByRole('button', { name: 'New version' }).click();
+  const replaceDialog = page.locator('[role="dialog"]');
+  await replaceDialog.locator('input[type="file"]').setInputFiles({
+    name: 'smoke-template.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n% SOMS template smoke v2\n%%EOF\n'),
+  });
+  await replaceDialog.getByRole('button', { name: /^Upload v\d+$/ }).click();
+  // The replace dialog closes only after the new version row commits.
+  await replaceDialog.waitFor({ state: 'detached', timeout: 30000 });
+  // Wait for the revalidated board to show v2 on the Smoke group.
+  await page.waitForFunction(() => document.body.innerText.includes('v2'), null, {
+    timeout: 15000,
+  });
+  check(
+    'superseded template shows the v2 badge',
+    (await smokeGroup.innerText()).includes('v2')
+  );
+  await smokeGroup.getByRole('button', { name: /History \(1\)/ }).click();
+  await page.waitForSelector('text=v1 · smoke-template.pdf', { timeout: 10000 });
+  check(
+    'template history lists the previous version',
+    (await page.locator('text=v1 · smoke-template.pdf').count()) >= 1
+  );
+  const templateVersionHrefs = await smokeGroup
+    .locator('a[href^="/api/templates/"]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('href')));
+  let templateVersionsDownloadable = true;
+  for (const href of new Set(templateVersionHrefs)) {
+    const versionResponse = await page.request.get(`${BASE}${href}`);
+    if (versionResponse.status() !== 200) templateVersionsDownloadable = false;
+  }
+  check(
+    'previous template version stays downloadable',
+    templateVersionsDownloadable && templateVersionHrefs.length >= 2,
+    `${templateVersionHrefs.length} file links`
+  );
+
+  // The public board shows the active version to every signed-in user.
+  await page.goto(`${BASE}/templates`, { waitUntil: 'networkidle' });
+  check(
+    'public template board lists the new template',
+    (await page.locator('main').innerText()).includes('Smoke Template')
+  );
+
+  await signOut(page);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/templates`, { waitUntil: 'networkidle' });
+  const officerTemplateText = await page.locator('main').innerText();
+  check(
+    'officer sees the template on the public board',
+    officerTemplateText.includes('Smoke Template')
+  );
+  const officerDownload = await page.request.get(`${BASE}${templateHrefs[0]}`);
+  check(
+    'officer can download the template',
+    officerDownload.status() === 200,
+    `status ${officerDownload.status()}`
+  );
+  await page.goto(`${BASE}/osa/templates`, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle');
+  check(
+    'officer cannot open the OSA template library',
+    !page.url().includes('/osa/templates'),
+    page.url()
+  );
+
+  // ---- 19. Phase 7 - announcement board -------------------------------------
+  // Still signed in as the LITS officer - check the seeded announcement first.
+  await page.goto(`${BASE}/announcements`, { waitUntil: 'networkidle' });
+  const officerAnnouncementText = await page.locator('main').innerText();
+  check(
+    'officer sees the seeded all-community announcement',
+    officerAnnouncementText.includes('Accreditation Requirements')
+  );
+  check(
+    'officer does not see the Post announcement button',
+    (await page.getByRole('button', { name: 'Post announcement' }).count()) === 0
+  );
+
+  // OSA posts an organization-targeted announcement and checks the audience.
+  await signOut(page);
+  await signIn(page, 'osa.admin@acd.edu.ph');
+  await page.goto(`${BASE}/announcements`, { waitUntil: 'networkidle' });
+  check(
+    'OSA can open the announcement board',
+    (await page.locator('main').innerText()).includes('Announcements')
+  );
+  await page.getByRole('button', { name: 'Post announcement' }).click();
+  await page.fill('#announcement-title', 'Smoke Bulletin');
+  await page.fill('#announcement-body', 'e2e throwaway announcement body');
+  // Audience -> Organization (Radix Select: click trigger, pick the option).
+  const composerDialog = page.locator('[role="dialog"]');
+  await composerDialog.locator('[aria-label="Announcement audience"]').click();
+  await page.getByRole('option', { name: 'Organization' }).click();
+  // Pick LITS once the organization select appears.
+  await composerDialog.locator('[aria-label="Target organization"]').waitFor({ timeout: 10000 });
+  await composerDialog.locator('[aria-label="Target organization"]').click();
+  await page.getByRole('option', { name: /LITS/ }).first().click();
+  await composerDialog.getByRole('button', { name: 'Post announcement' }).click();
+  // The composer closes only after the announcement + notifications commit.
+  await composerDialog.waitFor({ state: 'detached', timeout: 30000 });
+  await page.waitForSelector('text=Smoke Bulletin', { timeout: 30000 });
+  const postedBoardText = await page.locator('main').innerText();
+  check(
+    'OSA announcement posted and listed on the board',
+    postedBoardText.includes('Smoke Bulletin')
+  );
+  check(
+    'posted announcement carries the Organization audience badge',
+    postedBoardText.includes('Smoke Bulletin') && postedBoardText.includes('Organization')
+  );
+
+  // LITS officer: sees it + got the in-app notification.
+  await signOut(page);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/announcements`, { waitUntil: 'networkidle' });
+  check(
+    'targeted officer sees the announcement',
+    (await page.locator('main').innerText()).includes('Smoke Bulletin')
+  );
+  await page.goto(`${BASE}/notifications`, { waitUntil: 'networkidle' });
+  check(
+    'targeted officer received the in-app notification',
+    (await page.locator('main').innerText()).includes('Smoke Bulletin')
+  );
+
+  // AFPHI officer: sees neither the announcement nor the notification.
+  await signOut(page);
+  await signIn(page, 'president.afphi@acd.edu.ph');
+  await page.goto(`${BASE}/announcements`, { waitUntil: 'networkidle' });
+  check(
+    'untargeted officer does not see the announcement',
+    !(await page.locator('main').innerText()).includes('Smoke Bulletin')
+  );
+  await page.goto(`${BASE}/notifications`, { waitUntil: 'networkidle' });
+  check(
+    'untargeted officer did not receive the notification',
+    !(await page.locator('main').innerText()).includes('Smoke Bulletin')
+  );
+
+  // ---- 20. Phase 8 - global search ------------------------------------------
+  // Still signed in as the AFPHI officer; search for a seeded organization.
+  await page.goto(`${BASE}/search?q=LITS`, { waitUntil: 'networkidle' });
+  const searchLits = await page.locator('main').innerText();
+  check(
+    'global search finds the LITS organization',
+    searchLits.includes('LITS') || /Lightning|LITS/i.test(searchLits),
+    searchLits.slice(0, 120)
+  );
+
+  await page.goto(`${BASE}/search?q=`, { waitUntil: 'networkidle' });
+  check(
+    'empty search shows the prompt, not results',
+    (await page.locator('main').innerText()).includes('Type at least')
+  );
+
+  // The header search box exists for every signed-in user.
+  check(
+    'header exposes the global search box',
+    (await page.locator('header input[type="search"]').count()) >= 1 ||
+      (await page.locator('header a[href="/search"]').count()) >= 1
+  );
+
+  // Searching for a smoke title the officer cannot see returns nothing.
+  await page.goto(`${BASE}/search?q=${encodeURIComponent(smokeTitle ?? 'zzzz')}`, {
+    waitUntil: 'networkidle',
+  });
+  const searchHidden = await page.locator('main').innerText();
+  check(
+    'global search respects RLS - other-org draft is invisible',
+    searchHidden.includes('No matches') ||
+      !searchHidden.includes(smokeTitle ?? 'zzzz-nonexistent'),
+    searchHidden.slice(0, 120)
+  );
+
+  // LITS officer can find their own proposal through global search.
+  await signOut(page);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/search?q=${encodeURIComponent(smokeTitle)}`, {
+    waitUntil: 'networkidle',
+  });
+  const searchOwn = await page.locator('main').innerText();
+  check(
+    'global search finds the officer own proposal',
+    searchOwn.includes(smokeTitle),
+    searchOwn.slice(0, 120)
+  );
 } catch (error) {
   failures += 1;
   console.error('FAIL  unexpected error:', error);
@@ -1440,6 +1686,42 @@ async function removeSmokeRecords() {
         error.message
       );
     }
+  }
+
+  // Phase 7 template: rows + storage objects (matched by the throwaway name).
+  try {
+    const { data: templateRows } = await admin
+      .from('templates')
+      .select('id, storage_path')
+      .eq('name', SMOKE_TEMPLATE_NAME);
+    for (const row of templateRows ?? []) {
+      await admin.storage.from('templates').remove([row.storage_path]);
+      await admin.from('templates').delete().eq('id', row.id);
+      console.log(`cleanup  removed template ${row.id}`);
+    }
+  } catch (error) {
+    console.warn('cleanup  could not remove the smoke template:', error.message);
+  }
+
+  // Phase 7 announcement + its notifications (matched by the throwaway title).
+  try {
+    const { data: announcementRows } = await admin
+      .from('announcements')
+      .select('id, attachment_path')
+      .eq('title', SMOKE_ANNOUNCEMENT_TITLE);
+    for (const row of announcementRows ?? []) {
+      if (row.attachment_path) {
+        await admin.storage.from('announcements').remove([row.attachment_path]);
+      }
+      await admin.from('announcements').delete().eq('id', row.id);
+      console.log(`cleanup  removed announcement ${row.id}`);
+    }
+    await admin.from('notifications').delete().eq('title', SMOKE_ANNOUNCEMENT_TITLE);
+  } catch (error) {
+    console.warn(
+      'cleanup  could not remove the smoke announcement:',
+      error.message
+    );
   }
 }
 

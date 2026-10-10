@@ -176,3 +176,28 @@ export const REQUIREMENT_VALUES: RequirementStatus[] = [
   'overdue',
   'waived',
 ];
+
+export type TemplateCategory = Database['public']['Enums']['template_category'];
+
+export const TEMPLATE_CATEGORY_LABELS: Record<TemplateCategory, string> = {
+  proposal_form: 'Proposal Forms',
+  liquidation_form: 'Liquidation Forms',
+  accomplishment_report: 'Accomplishment Report Forms',
+  other: 'Other Forms',
+};
+
+export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
+  'proposal_form',
+  'liquidation_form',
+  'accomplishment_report',
+  'other',
+];
+
+export type AnnouncementTargetType =
+  Database['public']['Enums']['announcement_target_type'];
+
+export const ANNOUNCEMENT_TARGET_LABELS: Record<AnnouncementTargetType, string> = {
+  all: 'Everyone',
+  college: 'College',
+  organization: 'Organization',
+};

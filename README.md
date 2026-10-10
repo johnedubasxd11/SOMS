@@ -4,18 +4,18 @@ Web-based system for the **Office of Student Affairs (OSA), Assumption College o
 Organization officers submit softcopy documents online (and track the matching hardcopy),
 OSA reviews, approves and stores everything in one place.
 
-> **Status: Phase 9 complete** - authentication, proxy-based route protection,
+> **Status: Phase 10 complete** - authentication, proxy-based route protection,
 > role-based layout, user management, organization records, four submission
 > modules on one shared workflow engine, notifications (Realtime + e-mail),
 > requirements with deadline reminders, the audit trail viewer, role-aware
 > dashboards, the OSA report screen with Excel/PDF exports, the Phase 3
 > checkpoint (a configurable approval chain per module with the **dean** role
-> between the adviser and OSA), and the spec's Phase 3-5 checkpoints: the
-> approval workflow walks officer -> adviser -> dean -> OSA with a revision
-> loop, overlapping venue bookings are refused with a live warning, and
-> attachment uploads are versioned - the previous file stays downloadable.
-> Tests and cleanup are done: 36 RLS/RPC checks in SQL and the browser smoke
-> test in `scripts/e2e-smoke.mjs`.
+> between the adviser and OSA), the spec's Phase 3-5 checkpoints (approval
+> chain, venue conflicts, attachment versioning), plus the spec's remaining
+> Phase 7 + 8 features: the OSA template library with version history, the
+> announcement board with audience targeting, and global search.
+> Tests and cleanup are done: 38 RLS/RPC checks in SQL and 175 browser checks
+> in `scripts/e2e-smoke.mjs`.
 
 ## Tech stack
 
@@ -117,8 +117,8 @@ Default password for **every** seeded account: `ChangeMe123!`
 | `npm run db:reset`      | Recreate the local DB, apply all migrations, run `seed.sql` |
 | `npm run gen:types`     | Regenerate `src/lib/database.types.ts` from the schema    |
 | `npm run seed:auth`     | Create auth users, adviser/officer links and sample records  |
-| `npm run e2e`           | Browser smoke test: auth, roles, all four submission workflows through the approval chain (adviser, dean, OSA), chain editor, notifications, dashboards, report exports, venue conflict warning + refusal, calendar board, venue manager and attachment versioning (150 checks, needs `npm run dev`) |
-| `npm run test:rls`      | 36 RLS + RPC smoke tests against the local database (all rolled back)  |
+| `npm run e2e`           | Browser smoke test: auth, roles, all four submission workflows through the approval chain (adviser, dean, OSA), chain editor, notifications, dashboards, report exports, venue conflict warning + refusal, calendar board, venue manager, attachment versioning, the template library with version history, the announcement board and global search (175 checks, needs `npm run dev`) |
+| `npm run test:rls`      | 38 RLS + RPC smoke tests against the local database (all rolled back)  |
 
 ## Phase 1 - what was built
 
@@ -588,13 +588,93 @@ src/components/submissions/attachments.tsx  v-badges, "new version" + history
   entry per logical file with a `v2` badge and a "History (n)" list of the
   older versions; deleting the newest version restores the previous one.
 
+## Phase 10 - what was built (spec Phase 7 + 8)
+
+The spec's remaining Phase 7 features (template library, announcement board)
+and Phase 8's global search.
+
+```
+supabase/migrations/20261011000100_phase7_announcements_notify.sql
+                                    notify_announcement_recipients() (SECURITY
+                                    DEFINER, OSA-only): fans an announcement out
+                                    to every targeted user's notifications;
+                                    authenticated cannot INSERT notifications
+                                    directly, this RPC is the only write path
+src/lib/actions/templates.ts        upload / replace (new version) / delete
+                                    (deleting the active version restores its
+                                    parent); OSA-only, same document-versioning
+                                    contract as attachments
+src/lib/actions/announcements.ts    create (zod audience/target validation,
+                                    attachment upload to the `announcements`
+                                    bucket, calls the notify RPC) + delete
+src/app/api/templates/[id]/route.ts signed-URL download (session + row check)
+src/app/api/announcements/[id]/file/route.ts
+                                    signed-URL download for the bulletin file
+src/components/admin/template-manager.tsx   OSA library: upload dialog, replace
+                                    dialog, per-template "History (n)" list,
+                                    delete - grouped by name, newest version first
+src/components/admin/announcement-board.tsx  OSA composer (all / college /
+                                    organization audience) + delete; everyone
+                                    else sees the read-only board (pinned first,
+                                    expired hidden from officers)
+src/app/(app)/templates/page.tsx    public read-only template board (all roles)
+src/app/(app)/osa/templates/page.tsx   OSA library (upload / replace / history)
+src/app/(app)/announcements/page.tsx    announcement board (all roles)
+src/app/(app)/search/page.tsx       global search: proposals, reports, other +
+                                    audit documents, organizations and
+                                    announcements in one box; every query runs
+                                    under the caller's session, so RLS scopes
+                                    the results; min 2 characters
+src/lib/navigation.ts               /templates, /announcements, /osa/templates
+src/lib/labels.ts                   TEMPLATE_CATEGORY_LABELS,
+                                    ANNOUNCEMENT_TARGET_LABELS
+scripts/seed-users.ts               idempotent sample template seed
+```
+
+- **Template library.** OSA uploads PDFs (`proposal_form`, `report_form`,
+  `accomplishment`, `other`) to the private `templates` bucket. Everyone can
+  browse `/templates` and download the active version through
+  `/api/templates/{id}` (signed URL). Replacing a template follows the same
+  contract as attachment versioning: a new row (`parent_id`, `version` + 1),
+  the old row goes inactive but stays downloadable; the group shows a
+  `v2` badge and a "History (n)" list; deleting the newest version restores
+  the previous one.
+- **Announcement board.** OSA posts a bulletin (title, body, optional
+  attachment, optional expiry) with an audience: all signed-in users, one
+  college or one organization. Posting calls
+  `notify_announcement_recipients()`, which inserts one `notifications` row
+  per targeted active user - the direct INSERT policy on `notifications` is
+  still revoked, so the fan-out can never be bypassed or forged. Expired
+  bullets vanish for officers/advisers/deans but stay with OSA; pinned ones
+  sort first. Officers/advisers get no composer button.
+- **Global search.** The header carries a search box (desktop) that submits
+  `GET /search?q=...`. The page queries the RLS-scoped list views plus
+  `organizations` and `announcements` for the term, sections the results by
+  kind and links each row to its detail page. Everything runs under the
+  caller's session: an officer's draft in another organization is invisible,
+  OSA sees everything. A plain GET form - no client-side fetching, works with
+  the keyboard, and the query is bookmarkable.
+- **`notify_announcement_recipients(p_announcement_id)`** resolves the
+  announcement's targets, looks up the audience (all users / one college's
+  profiles / one organization's officers + adviser + dean), inserts
+  notifications, and returns the count. Only OSA may call it (42501 for
+  everyone else); it is SECURITY DEFINER, so it is the one sanctioned write
+  path for fan-out notifications.
+- **Tests.** RLS `T37` (everyone reads the active template version, only OSA
+  inserts; superseding keeps the old version readable) and `T38` (the notify
+  RPC reaches exactly the targeted users, is OSA-only, and a direct
+  `notifications` insert is still refused). Browser sections 18-20 upload a
+  template, supersede it, check the history, post a targeted announcement
+  (one officer sees it, the untargeted one does not) and use the global
+  search - all cleaned up at the end.
+
 ## Testing
 
 ```bash
 # 1. everything compiles
 npm run typecheck && npm run lint && npm run build
 
-# 2. RLS + RPC smoke tests (36 checks, all rolled back)
+# 2. RLS + RPC smoke tests (38 checks, all rolled back)
 npm run test:rls
 
 # 3. browser smoke test - the app must be running first
@@ -652,6 +732,12 @@ Expected results in the RLS smoke test:
   version stays readable (`1`) and downloadable, `v_document_latest` returns
   only the newest (`1`), another org's officer reads neither version (`0`)
   while OSA keeps the full audit trail (`2`)
+- **Phase 10 (spec 7-8):** everyone reads only the active template version
+  (`>=1` / `1`), only OSA can insert one (ERROR), superseding a template
+  keeps the old version readable (`2` rows, active `1`); the announcement
+  notify RPC reaches exactly the targeted users (targeted officer notified,
+  untargeted officer `0 / 0`), is OSA-only (42501), and a direct
+  `notifications` insert is still refused (RLS error)
 
 Expected results in the browser smoke test (`npm run e2e`):
 
@@ -713,9 +799,21 @@ Expected results in the browser smoke test (`npm run e2e`):
   and the empty conflict register; attaching the same file name again
   supersedes it (`v2` badge), the "History (1)" list shows the previous
   version, and both versions answer **200** from `/api/files/{id}`
+- **Phase 10:** OSA uploads a template (`v1` badge), downloads it through a
+  signed URL, supersedes it with a new version (`v2` badge, "History (1)"
+  lists the previous file, both versions answer **200**); every other role
+  sees the template on the public `/templates` board and can download it but
+  is turned away from `/osa/templates`; the officer sees the seeded
+  all-community announcement and never the "Post announcement" button; OSA
+  posts a targeted announcement (audience badge), the targeted officer sees
+  it and the untargeted officer does not; the header exposes the global
+  search box, an empty query shows the prompt, a real query finds the LITS
+  organization and the officer's own proposal, and another organization's
+  draft proposal stays invisible (RLS)
 - the throwaway account, proposal, conflicting proposal, report, document,
-  requirement, attachments, the overwritten `membership_count` and (after a
-  failed run) the approval chains are all restored by the cleanup step
+  requirement, template (both versions + storage), announcement (with its
+  notifications), attachments, the overwritten `membership_count` and (after
+  a failed run) the approval chains are all restored by the cleanup step
 
 ## Security notes
 

@@ -1421,6 +1421,9 @@ isOneToOne: false
 "mark_hardcopy_received":
 { Args: { "p_received_at"?: string,"p_receiver_name": string,"p_record_id": string,"p_record_type": Database["public"]['Enums']["record_type"],"p_remarks"?: string }; Returns: string
                            },
+"notify_announcement_recipients":
+{ Args: { "p_announcement_id": string }; Returns: number
+                           },
 "notify_approval_step":
 { Args: { "p_body": string,"p_organization_id": string,"p_record_id": string,"p_record_type": Database["public"]['Enums']["record_type"],"p_step_role": Database["public"]['Enums']["approval_step_role"],"p_title": string,"p_type": Database["public"]['Enums']["notification_type"] }; Returns: undefined
                            },

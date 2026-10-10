@@ -545,3 +545,89 @@ select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', '
 select 'osa_audit_trail' as check, count(*)::text as value
   from documents where id in (:'t36_v1', :'t36_v2');
 rollback;
+
+-- ---------------------------------------------------------------------------
+-- Phase 7 - template library (every signed-in user reads, only OSA writes)
+-- ---------------------------------------------------------------------------
+
+\echo '### T37 templates - everyone reads the active version, only OSA writes (expect >=1 / ERROR / 1 / 0)'
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+-- Officer sees the seeded template.
+select 'officer_visible_templates' as check, count(*)::text as value
+  from templates where is_active;
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+-- Officer cannot insert a template (RLS write is OSA-only).
+insert into templates (name, category, storage_path, file_name, mime_type, size_bytes)
+values ('T37 officer template', 'other', 't37/officer.pdf', 't37.pdf', 'application/pdf', 10);
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+-- OSA inserts a template, then the version row + parent link.
+insert into templates (name, category, storage_path, file_name, mime_type, size_bytes, version, is_active)
+values ('T37 template', 'other', 't37/v1.pdf', 't37.pdf', 'application/pdf', 10, 1, true)
+returning id as t37_v1 \gset
+insert into templates (name, category, storage_path, file_name, mime_type, size_bytes, version, is_active, parent_id)
+values ('T37 template', 'other', 't37/v2.pdf', 't37.pdf', 'application/pdf', 20, 2, true, :'t37_v1')
+returning id as t37_v2 \gset
+update templates set is_active = false where id = :'t37_v1';
+select 'osa_inserted_versions' as check, count(*)::text as value
+  from templates where name = 'T37 template';
+-- An officer of a different org still sees the active version (templates are
+-- world-readable within the signed-in community).
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_afphi', 'role', 'authenticated')::text, true);
+select 'afphi_sees_active' as check, count(*)::text as value
+  from templates where name = 'T37 template' and is_active;
+rollback;
+
+-- ---------------------------------------------------------------------------
+-- Phase 7 - announcement notifications (notify_announcement_recipients)
+-- ---------------------------------------------------------------------------
+
+\echo '### T38 announcements - targeted notify reaches the right users only (expect 1 / 0 / >=1 / 0 / ERROR / ERROR)'
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+-- OSA posts an organization-targeted announcement for LITS.
+insert into announcements (title, body, target_type, created_by)
+values ('T38 LITS bulletin', 'Targeted test announcement.', 'organization', :'osa_admin')
+returning id as t38_ann \gset
+insert into announcement_targets (announcement_id, organization_id)
+values (:'t38_ann', :'lits_org');
+-- The RPC fans out to LITS officers + advisers (not AFPHI).
+select notify_announcement_recipients(:'t38_ann') as t38_notified;
+-- LITS officer sees the announcement and got a notification.
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+select 'lits_sees_announcement' as check, count(*)::text as value
+  from announcements where id = :'t38_ann';
+select 'lits_notified' as check, count(*)::text as value
+  from notifications where user_id = :'officer_lits' and title = 'T38 LITS bulletin';
+-- AFPHI officer sees neither.
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_afphi', 'role', 'authenticated')::text, true);
+select 'afphi_sees_announcement' as check, count(*)::text as value
+  from announcements where id = :'t38_ann';
+select 'afphi_notified' as check, count(*)::text as value
+  from notifications where user_id = :'officer_afphi' and title = 'T38 LITS bulletin';
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+-- An officer cannot call the broadcast RPC.
+select notify_announcement_recipients(gen_random_uuid());
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+-- An officer cannot insert announcements directly.
+insert into announcements (title, body, target_type, created_by)
+values ('T38 officer announcement', 'Should be refused.', 'all', :'officer_lits');
+rollback;
