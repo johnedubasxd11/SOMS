@@ -743,9 +743,11 @@ Expected results in the browser smoke test (`npm run e2e`):
    reference number like every other module.
 5. One adviser **and** one officer (President) account per organization were
    seeded - tell me if you want every officer position instead.
-6. Brand colours and the school logo are still placeholders (the shell uses an
-   "S" mark and initials avatars) - the real ACD logo/colours can replace them
-   in the polish pass.
+6. Brand colours now follow ACD's official blue (the Pantone 301 family,
+   `#004B87`) and the shell/login use a geometric star-and-A school mark
+   (`src/components/layout/school-mark.tsx`). The real ACD seal is a
+   trademark of the college - drop the image into `src/app/icon.svg` /
+   replace the component when the office supplies the file.
 7. There is **no separate `comments` table**: the spec's comment thread per
    submission is the `review_logs` rows with `action = 'commented'`
    (written by `add_review_comment()`), so one timeline holds both status

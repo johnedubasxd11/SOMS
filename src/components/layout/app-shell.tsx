@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 
 import { logoutAction } from '@/lib/actions/auth';
+import { SchoolMark } from '@/components/layout/school-mark';
 import { ROLE_LABELS, roleBadgeVariant, type UserRole } from '@/lib/labels';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { Button } from '@/components/ui/button';
@@ -152,9 +153,7 @@ function CircleIcon({ className }: { className?: string }) {
 function Brand() {
   return (
     <div className="flex items-center gap-2.5 border-b px-4 py-3.5">
-      <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-        S
-      </div>
+      <SchoolMark className="size-8 shrink-0" />
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold leading-tight">SOMS</p>
         <p className="truncate text-[11px] leading-tight text-muted-foreground">
@@ -289,7 +288,8 @@ export function AppShell({
             </SheetContent>
           </Sheet>
 
-          <div className="lg:hidden">
+          <div className="flex items-center gap-2 lg:hidden">
+            <SchoolMark className="size-6 shrink-0" />
             <p className="text-sm font-semibold">SOMS</p>
           </div>
 

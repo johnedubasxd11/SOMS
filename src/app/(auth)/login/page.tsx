@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/components/auth/login-form';
+import { SchoolMark } from '@/components/layout/school-mark';
 import { getCurrentUser } from '@/lib/auth';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -24,7 +25,8 @@ export default async function LoginPage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-10">
       <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-1 text-center">
+        <div className="space-y-2 text-center">
+          <SchoolMark className="mx-auto size-14" />
           <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
             Assumption College of Davao
           </p>
