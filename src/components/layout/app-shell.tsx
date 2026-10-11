@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
+  BadgeCheck,
   BarChart3,
   BookOpenCheck,
   CalendarDays,
@@ -27,6 +28,7 @@ import {
   Stamp,
   UserCog,
   UserRound,
+  UserRoundCog,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -70,6 +72,8 @@ const ICONS: Record<string, LucideIcon> = {
   Megaphone,
   FileSpreadsheet,
   FileStack,
+  BadgeCheck,
+  UserRoundCog,
 };
 
 export interface ShellNavItem {

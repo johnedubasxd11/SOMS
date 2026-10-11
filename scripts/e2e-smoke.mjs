@@ -7,9 +7,12 @@
 // plus the spec checkpoints: venue conflict warning + refusal, the /calendar
 // board, the OSA venue manager, and attachment versioning where the previous
 // file stays downloadable (Phase 9); then the Phase 7 template library +
-// version history, the announcement board with audience targeting, and the
-// Phase 8 global search box - driven through a real browser (Microsoft Edge
-// via playwright-core).
+// version history, the announcement board with audience targeting, the
+// Phase 8 global search box, and the Phase 6 foundation features - the
+// accreditation checklist (OSA publishes items, the org uploads, OSA
+// approves), the officer-list turnover (officers submit, OSA approves) and
+// the school-year archive + one-click rollover - driven through a real
+// browser (Microsoft Edge via playwright-core).
 //
 //   npm run dev            # in one terminal
 //   node scripts/e2e-smoke.mjs
@@ -47,6 +50,10 @@ let smokeRequirementTitle = null;
 /** Phase 7 throwaway template + announcement (removed at the end). */
 const SMOKE_TEMPLATE_NAME = 'Smoke Template';
 const SMOKE_ANNOUNCEMENT_TITLE = 'Smoke Bulletin';
+
+/** Phase 6 throwaway checklist item + past school year (removed at the end). */
+const SMOKE_ACCREDITATION_ITEM = 'Smoke Checklist Item';
+const SMOKE_PAST_YEAR = '1998-1999';
 
 /** Original A Squad membership figure (the org edit check overwrites it). */
 let organizationMembership = null;
@@ -1530,6 +1537,226 @@ try {
     searchOwn.includes(smokeTitle),
     searchOwn.slice(0, 120)
   );
+
+  // ---- 21. Phase 6 - accreditation checklist --------------------------------
+  // OSA publishes one checklist item for the current school year.
+  await signOut(page);
+  await signIn(page, 'osa.admin@acd.edu.ph');
+  await page.goto(`${BASE}/osa/accreditation`, { waitUntil: 'networkidle' });
+  check(
+    'OSA can open the accreditation manager',
+    (await page.locator('main').innerText()).includes('Checklist items')
+  );
+  await page.getByTestId('accreditation-add-item').click();
+  const itemDialog = page.locator('[role="dialog"]');
+  await itemDialog.waitFor({ state: 'visible', timeout: 15000 });
+  await itemDialog.locator('#item-title-create').fill(SMOKE_ACCREDITATION_ITEM);
+  await itemDialog.locator('#item-description-create').fill('e2e throwaway checklist item');
+  await itemDialog.getByRole('button', { name: 'Add item' }).click();
+  // The dialog closes only after the insert commits.
+  await itemDialog.waitFor({ state: 'detached', timeout: 30000 });
+  await page.waitForSelector(`text=${SMOKE_ACCREDITATION_ITEM}`, { timeout: 30000 });
+  check(
+    'checklist item listed on the OSA manager',
+    (await page.locator('main').innerText()).includes(SMOKE_ACCREDITATION_ITEM)
+  );
+
+  // LITS officer uploads a file for the item.
+  await signOut(page);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/accreditation`, { waitUntil: 'networkidle' });
+  const checklistText = await page.locator('main').innerText();
+  check(
+    'officer sees the published checklist item',
+    checklistText.includes(SMOKE_ACCREDITATION_ITEM)
+  );
+  // Scope every locator by the item's own testid, never a shared button name.
+  const itemId = (await page.locator('[data-testid^="accreditation-file-"]').first().getAttribute('data-testid'))
+    ?.replace('accreditation-file-', '');
+  check('checklist upload control rendered', Boolean(itemId), itemId ?? 'missing');
+  if (itemId) {
+    await page.setInputFiles(`[data-testid="accreditation-file-${itemId}"]`, {
+      name: 'constitution.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4\n% SOMS phase 6 accreditation smoke test\n%%EOF\n'),
+    });
+    await page.getByTestId(`accreditation-submit-${itemId}`).click();
+    // The badge flips from "Not uploaded" to "Pending" after the server action.
+    await page
+      .getByTestId(`accreditation-status-${SMOKE_ACCREDITATION_ITEM}`)
+      .waitFor({ timeout: 30000 });
+    const uploadBadge = await page
+      .getByTestId(`accreditation-status-${SMOKE_ACCREDITATION_ITEM}`)
+      .innerText();
+    check('officer upload shows as pending', uploadBadge.includes('Pending'), uploadBadge);
+    check(
+      'uploaded file is downloadable through the signed-URL route',
+      (await page.locator('a[href^="/api/accreditation/"]').count()) >= 1
+    );
+  }
+
+  // OSA reviews and approves the upload.
+  await signOut(page);
+  await signIn(page, 'osa.admin@acd.edu.ph');
+  await page.goto(`${BASE}/osa/accreditation`, { waitUntil: 'networkidle' });
+  const reviewRow = page.locator('tr', { hasText: SMOKE_ACCREDITATION_ITEM }).last();
+  await reviewRow.getByRole('button', { name: 'Review' }).click();
+  const reviewDialog = page.locator('[role="dialog"]');
+  await reviewDialog.waitFor({ state: 'visible', timeout: 15000 });
+  await reviewDialog.getByTestId('accreditation-approve').click();
+  await reviewDialog.waitFor({ state: 'detached', timeout: 30000 });
+  // The uploads table now shows the Approved badge for the row.
+  const osaManagerText = await page.locator('main').innerText();
+  check(
+    'OSA approval shows the Approved badge on the upload row',
+    osaManagerText.includes(SMOKE_ACCREDITATION_ITEM) &&
+      /Approved/.test(osaManagerText)
+  );
+
+  // The officer sees the approved badge; an untargeted org sees no upload.
+  await signOut(page);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/accreditation`, { waitUntil: 'networkidle' });
+  const approvedBadge = await page
+    .getByTestId(`accreditation-status-${SMOKE_ACCREDITATION_ITEM}`)
+    .innerText();
+  check('officer upload shows as approved', approvedBadge.includes('Approved'), approvedBadge);
+
+  await signOut(page);
+  await signIn(page, 'president.afphi@acd.edu.ph');
+  await page.goto(`${BASE}/accreditation`, { waitUntil: 'networkidle' });
+  const afphiChecklist = await page.locator('main').innerText();
+  check(
+    'another organization sees the item but no upload of its own',
+    afphiChecklist.includes(SMOKE_ACCREDITATION_ITEM) &&
+      afphiChecklist.includes('Not uploaded')
+  );
+
+  // ---- 22. Phase 6 - officer turnover ---------------------------------------
+  // LITS officers type the incoming list and submit it to OSA.
+  await signOut(page);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/turnover`, { waitUntil: 'networkidle' });
+  check(
+    'officer can open the turnover screen',
+    (await page.locator('main').innerText()).includes('Officer turnover')
+  );
+  await page.getByRole('button', { name: 'Add officer' }).click();
+  await page.getByRole('button', { name: 'Add officer' }).click();
+  const nameInputs = page.getByLabel('Officer name');
+  const positionInputs = page.getByLabel('Officer position');
+  await nameInputs.nth(0).fill('Smoke Turnover President');
+  await positionInputs.nth(0).fill('President');
+  await nameInputs.nth(1).fill('Smoke Turnover Secretary');
+  await positionInputs.nth(1).fill('Secretary');
+  await page.getByTestId('turnover-submit').click();
+  // The submit button saves the draft first, then flips it to submitted.
+  // Scope to the badge: the frozen-state paragraph mentions "With OSA" too.
+  await page.locator('[data-slot="badge"]', { hasText: 'With OSA' }).waitFor({ timeout: 30000 });
+  check(
+    'submitted officer list shows the With OSA badge',
+    (await page.locator('[data-slot="badge"]', { hasText: 'With OSA' }).count()) === 1
+  );
+  // Save/Submit only render while the list is editable; Add officer stays in
+  // the DOM but disabled.
+  check(
+    'submitted list is frozen for editing',
+    (await page.getByTestId('turnover-save').count()) === 0 &&
+      (await page.getByTestId('turnover-submit').count()) === 0 &&
+      (await page.getByRole('button', { name: 'Add officer' }).isDisabled())
+  );
+
+  // OSA approves the list.
+  await signOut(page);
+  await signIn(page, 'osa.admin@acd.edu.ph');
+  await page.goto(`${BASE}/osa/turnover`, { waitUntil: 'networkidle' });
+  // The queue only holds this run's submitted list (seed data has none), so
+  // the single review button is deterministic. Its testid carries the
+  // organization's display name (BSIT-LITS), never the bare code.
+  await page.locator('[data-testid^="turnover-review-"]').first().click();
+  const turnoverDialog = page.locator('[role="dialog"]');
+  await turnoverDialog.waitFor({ state: 'visible', timeout: 15000 });
+  const turnoverDialogText = await turnoverDialog.innerText();
+  check(
+    'OSA review dialog lists both officers',
+    turnoverDialogText.includes('Smoke Turnover President') &&
+      turnoverDialogText.includes('Smoke Turnover Secretary')
+  );
+  await turnoverDialog.getByTestId('turnover-approve').click();
+  await turnoverDialog.waitFor({ state: 'detached', timeout: 30000 });
+
+  // The organization sees the approved badge.
+  await signOut(page);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/turnover`, { waitUntil: 'networkidle' });
+  check(
+    'approved officer list shows the Approved badge',
+    (await page.locator('main').innerText()).includes('Approved')
+  );
+  check(
+    'approved officer list stays frozen',
+    (await page.getByTestId('turnover-save').count()) === 0 &&
+      (await page.getByRole('button', { name: 'Add officer' }).isDisabled())
+  );
+
+  // ---- 23. Phase 6 - school-year archive + rollover -------------------------
+  await signOut(page);
+  await signIn(page, 'its.admin@acd.edu.ph');
+  await page.goto(`${BASE}/admin/school-years`, { waitUntil: 'networkidle' });
+  check(
+    'school-years screen exposes the rollover control',
+    (await page.getByTestId('school-year-rollover').count()) === 1
+  );
+
+  // Create a throwaway past year, archive it, then restore it. Scope to the
+  // textbox role: the "Make this the current school year" checkbox label
+  // also contains the words "School year".
+  await page.getByRole('textbox', { name: 'School year' }).fill(SMOKE_PAST_YEAR);
+  await page.getByRole('textbox', { name: 'Start date' }).fill('1998-06-01');
+  await page.getByRole('textbox', { name: 'End date' }).fill('1999-03-31');
+  await page.getByRole('button', { name: 'Create school year' }).click();
+  const pastYearRow = page.getByTestId(`school-year-${SMOKE_PAST_YEAR}`);
+  await pastYearRow.waitFor({ timeout: 30000 });
+  check('throwaway school year created', true);
+
+  await pastYearRow.getByRole('button', { name: 'Archive' }).click();
+  await pastYearRow.getByRole('button', { name: 'Confirm archive' }).click();
+  await pastYearRow.getByText('Archived').waitFor({ timeout: 30000 });
+  check('archiving a past year marks it Archived', true);
+
+  // The current year cannot be archived.
+  const currentRow = page.getByTestId('school-year-2026-2027');
+  check(
+    'current year refuses archiving',
+    (await currentRow.innerText()).includes('Cannot archive')
+  );
+
+  // Restore the throwaway year so cleanup can simply delete it.
+  await pastYearRow.getByRole('button', { name: 'Restore' }).click();
+  await pastYearRow.getByText('Archived').waitFor({ state: 'detached', timeout: 30000 });
+  check('restoring an archived year clears the badge', true);
+
+  // One-click rollover: next year becomes current, the old one is archived.
+  const rolloverButton = page.getByTestId('school-year-rollover');
+  await rolloverButton.click();
+  await rolloverButton.click();
+  const nextYearRow = page.getByTestId('school-year-2027-2028');
+  await nextYearRow.waitFor({ timeout: 30000 });
+  const nextYearText = await nextYearRow.innerText();
+  check(
+    'rollover creates the next school year as current',
+    nextYearText.includes('Current'),
+    nextYearText.replace(/\s+/g, ' ').slice(0, 80)
+  );
+  const archivedOldYear = await currentRow.innerText();
+  check(
+    'rollover archives the previous school year',
+    archivedOldYear.includes('Archived'),
+    archivedOldYear.replace(/\s+/g, ' ').slice(0, 80)
+  );
+  // The archived year is read-only: creating a requirement against it is
+  // refused by the enforce_archived_school_year trigger (checked in RLS T41);
+  // here we only confirm the UI state - cleanup restores the seed shape.
 } catch (error) {
   failures += 1;
   console.error('FAIL  unexpected error:', error);
@@ -1537,6 +1764,8 @@ try {
   await browser.close();
   await removeCreatedUser();
   await removeSmokeRecords();
+  await removePhase6Records();
+  await restoreSchoolYears();
   await restoreOrganizationMembership();
   await restoreApprovalChains();
 }
@@ -1722,6 +1951,95 @@ async function removeSmokeRecords() {
       'cleanup  could not remove the smoke announcement:',
       error.message
     );
+  }
+}
+
+/**
+ * Phase 6 throwaway rows: the accreditation item + its upload (storage
+ * object included) and LITS's officer term (members cascade). Service role
+ * bypasses the archived-year trigger, so this works even after the rollover.
+ */
+async function removePhase6Records() {
+  const admin = await adminClient();
+  if (!admin) return;
+
+  // Accreditation item + submissions + storage objects.
+  try {
+    const { data: items } = await admin
+      .from('accreditation_items')
+      .select('id')
+      .eq('title', SMOKE_ACCREDITATION_ITEM);
+    for (const item of items ?? []) {
+      const { data: subs } = await admin
+        .from('accreditation_submissions')
+        .select('id, storage_path')
+        .eq('item_id', item.id);
+      for (const sub of subs ?? []) {
+        await admin.storage.from('org-documents').remove([sub.storage_path]);
+      }
+      await admin.from('accreditation_submissions').delete().eq('item_id', item.id);
+      await admin.from('accreditation_items').delete().eq('id', item.id);
+      console.log(`cleanup  removed accreditation item ${item.id}`);
+    }
+    await admin
+      .from('notifications')
+      .delete()
+      .eq('type', 'accreditation')
+      .ilike('title', '%Smoke Checklist Item%');
+    await admin
+      .from('notifications')
+      .delete()
+      .eq('type', 'accreditation')
+      .ilike('title', 'Accreditation %');
+  } catch (error) {
+    console.warn('cleanup  could not remove accreditation records:', error.message);
+  }
+
+  // Officer term for LITS (cascade deletes the member list) + notifications.
+  try {
+    const { data: org } = await admin
+      .from('organizations')
+      .select('id')
+      .eq('code', 'LITS')
+      .maybeSingle();
+    if (org) {
+      const { data: terms } = await admin
+        .from('officer_terms')
+        .select('id')
+        .eq('organization_id', org.id);
+      for (const term of terms ?? []) {
+        await admin.from('officer_terms').delete().eq('id', term.id);
+        console.log(`cleanup  removed officer term ${term.id}`);
+      }
+    }
+    await admin.from('notifications').delete().ilike('title', 'Officer list%');
+  } catch (error) {
+    console.warn('cleanup  could not remove the officer term:', error.message);
+  }
+}
+
+/**
+ * Puts the school years back to their seed shape after the section 23
+ * rollover: drop the rolled-over year, restore 2026-2027 as current, remove
+ * the throwaway past year.
+ */
+async function restoreSchoolYears() {
+  const admin = await adminClient();
+  if (!admin) return;
+
+  try {
+    // Clear the rollover-created year's current flag first (partial unique
+    // index on is_current), then restore the seeded year.
+    await admin.from('school_years').update({ is_current: false }).eq('name', '2027-2028');
+    await admin
+      .from('school_years')
+      .update({ is_current: true, is_archived: false })
+      .eq('name', '2026-2027');
+    await admin.from('school_years').delete().eq('name', '2027-2028');
+    await admin.from('school_years').delete().eq('name', SMOKE_PAST_YEAR);
+    console.log('cleanup  restored school years');
+  } catch (error) {
+    console.warn('cleanup  could not restore school years:', error.message);
   }
 }
 

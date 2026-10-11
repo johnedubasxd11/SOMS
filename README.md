@@ -4,17 +4,21 @@ Web-based system for the **Office of Student Affairs (OSA), Assumption College o
 Organization officers submit softcopy documents online (and track the matching hardcopy),
 OSA reviews, approves and stores everything in one place.
 
-> **Status: Phase 10 complete** - authentication, proxy-based route protection,
+> **Status: Phase 11 complete** - authentication, proxy-based route protection,
 > role-based layout, user management, organization records, four submission
 > modules on one shared workflow engine, notifications (Realtime + e-mail),
 > requirements with deadline reminders, the audit trail viewer, role-aware
 > dashboards, the OSA report screen with Excel/PDF exports, the Phase 3
 > checkpoint (a configurable approval chain per module with the **dean** role
 > between the adviser and OSA), the spec's Phase 3-5 checkpoints (approval
-> chain, venue conflicts, attachment versioning), plus the spec's remaining
-> Phase 7 + 8 features: the OSA template library with version history, the
-> announcement board with audience targeting, and global search.
-> Tests and cleanup are done: 38 RLS/RPC checks in SQL and 175 browser checks
+> chain, venue conflicts, attachment versioning), the spec's Phase 7 + 8
+> features (OSA template library with version history, the announcement board
+> with audience targeting, global search), and the spec's Phase 6 foundation
+> features: the accreditation checklist (OSA publishes items, organizations
+> upload, OSA approves), the officer-list turnover (officers submit the
+> incoming list, OSA approves) and the school-year archive + one-click
+> rollover (archived years are read-only for everyone).
+> Tests and cleanup are done: 41 RLS/RPC checks in SQL and 197 browser checks
 > in `scripts/e2e-smoke.mjs`.
 
 ## Tech stack
@@ -117,8 +121,8 @@ Default password for **every** seeded account: `ChangeMe123!`
 | `npm run db:reset`      | Recreate the local DB, apply all migrations, run `seed.sql` |
 | `npm run gen:types`     | Regenerate `src/lib/database.types.ts` from the schema    |
 | `npm run seed:auth`     | Create auth users, adviser/officer links and sample records  |
-| `npm run e2e`           | Browser smoke test: auth, roles, all four submission workflows through the approval chain (adviser, dean, OSA), chain editor, notifications, dashboards, report exports, venue conflict warning + refusal, calendar board, venue manager, attachment versioning, the template library with version history, the announcement board and global search (175 checks, needs `npm run dev`) |
-| `npm run test:rls`      | 38 RLS + RPC smoke tests against the local database (all rolled back)  |
+| `npm run e2e`           | Browser smoke test: auth, roles, all four submission workflows through the approval chain (adviser, dean, OSA), chain editor, notifications, dashboards, report exports, venue conflict warning + refusal, calendar board, venue manager, attachment versioning, the template library with version history, the announcement board, global search, the accreditation checklist, the officer-list turnover and the school-year archive + rollover (197 checks, needs `npm run dev`) |
+| `npm run test:rls`      | 41 RLS + RPC smoke tests against the local database (all rolled back)  |
 
 ## Phase 1 - what was built
 
@@ -668,6 +672,123 @@ scripts/seed-users.ts               idempotent sample template seed
   (one officer sees it, the untargeted one does not) and use the global
   search - all cleaned up at the end.
 
+## Phase 11 - what was built (spec Phase 6)
+
+The spec's Phase 6 foundation features: the accreditation checklist,
+officer-list turnover and the school-year archive + rollover.
+
+```
+supabase/migrations/20261011000200_phase6_accreditation_turnover.sql
+                                    notification_type gains 'accreditation'
+                                    and 'turnover'; officer_term_members (the
+                                    submitted list itself, free-text names -
+                                    incoming officers may not have accounts
+                                    yet); notify_osa_staff() (SECURITY
+                                    DEFINER fan-out to every active OSA /
+                                    super-admin - the officers -> OSA mirror
+                                    of notify_org_officers);
+                                    guard_officer_term_change() (status moves
+                                    only draft <-> submitted by the org,
+                                    submitted -> approved|draft by OSA);
+                                    guard_accreditation_submission() (only OSA
+                                    approves/rejects; the org may replace a
+                                    pending or rejected upload); RLS on the
+                                    new members table + widened
+                                    accreditation_submissions update/delete
+                                    policies; enforce_archived_school_year()
+                                    attached to every year-scoped table -
+                                    once a school year is archived every
+                                    INSERT/UPDATE/DELETE on its rows is
+                                    refused for signed-in users (service
+                                    role / migrations still pass)
+src/lib/validations/accreditation.ts   checklist item + OSA review schemas
+src/lib/validations/officer-terms.ts   member / term / review schemas
+src/lib/actions/accreditation.ts       OSA: item CRUD; org: upload / replace
+                                       (approved rows frozen, replace resets
+                                       to pending); OSA review with remarks +
+                                       org notifications
+src/lib/actions/officer-terms.ts       org: save draft (whole member list
+                                       replaced in one shot) / submit /
+                                       withdraw; OSA: approve or send back
+                                       with notes
+src/lib/actions/school-years.ts        archive / unarchive (current year
+                                       refuses) + one-click rollover (next
+                                       year created, made current, old year
+                                       archived; overlap-checked)
+src/app/api/accreditation/[id]/route.ts signed-URL download of one upload
+src/components/accreditation/checklist-view.tsx    org checklist: per-item
+                                       upload / replace / remove, status
+                                       badge, OSA remarks, signed-URL link
+src/components/admin/accreditation-manager.tsx     OSA: checklist CRUD +
+                                       review queue (approve / reject with
+                                       remarks)
+src/components/turnover/turnover-editor.tsx        org member-list editor
+                                       (add / remove / reorder, notes) +
+                                       save / submit / withdraw
+src/components/admin/turnover-review.tsx           OSA queue with the roster
+                                       inline + approve / send-back dialog
+src/components/admin/school-year-archive-buttons.tsx  archive / restore +
+                                       armed rollover button
+src/app/(app)/accreditation/page.tsx   org checklist (all roles with an org)
+src/app/(app)/osa/accreditation/page.tsx   OSA manager (OSA only)
+src/app/(app)/turnover/page.tsx        org officer list (officers)
+src/app/(app)/osa/turnover/page.tsx    OSA review queue (OSA only)
+src/app/(app)/admin/school-years/page.tsx   archive column + rollover control
+src/lib/navigation.ts                  /accreditation, /turnover,
+                                       /osa/accreditation, /osa/turnover
+src/lib/labels.ts                      ACCREDITATION_SUBMISSION_*,
+                                       OFFICER_TERM_* labels
+```
+
+- **Accreditation checklist.** OSA defines the per-school-year checklist
+  (`/osa/accreditation`: add / edit / delete items, required flag, sort
+  order). Every organization sees its own checklist at `/accreditation` and
+  uploads one PDF/DOC/XLS/JPG/PNG file (max 10 MB) per item to the private
+  `org-documents` bucket under
+  `{org_id}/accreditation/{item_id}/{sub_id}/{filename}` - the existing
+  org-scoped storage policies apply unchanged, and downloads go through
+  `/api/accreditation/{id}` (signed URL). Replacing an upload resets it to
+  `pending` and clears the review; once OSA approves, the row is frozen for
+  the organization. OSA approves or rejects each upload with remarks; the
+  organization is notified (via `notify_org_officers`) and can re-upload
+  after a rejection.
+- **Officer turnover.** The officers of an organization compose the incoming
+  officer list for the current school year at `/turnover` - free-text names
+  and positions (incoming officers may not have accounts yet), add / remove /
+  reorder rows, optional notes for OSA. Saving writes a draft
+  (`officer_terms` header + `officer_term_members` rows); submitting freezes
+  the member list (RLS: members are only writable while the term is a draft)
+  and notifies OSA. OSA reviews at `/osa/turnover` (roster inline) and
+  approves or sends the list back with notes - a send-back returns it to
+  draft so the officers can fix it. Status moves are enforced by the
+  `guard_officer_term_change` trigger: officers may only submit or withdraw;
+  OSA approves or sends back; an approved list can never return to
+  `submitted`.
+- **School-year archive + rollover.** Super admin archives (and restores)
+  school years from `/admin/school-years`; the current year refuses archival
+  (switch first). Once archived, the `enforce_archived_school_year` trigger
+  refuses every INSERT/UPDATE/DELETE on that year's proposals, reports,
+  documents, requirements, accreditation items/uploads, officer terms,
+  advisers and officer seats - for every signed-in user, OSA included.
+  Service role and migrations still pass (archival data fixes). The
+  one-click **Rollover** button creates the next school year (the day after
+  the current one ends), makes it current and archives the old one, with an
+  overlap check against existing years.
+- **Tests.** RLS `T39` (org uploads, cross-org officers see nothing, self-
+  approve refused by the guard, replace-while-pending stays pending, replace
+  after rejection works, approved rows freeze for the org), `T40` (term
+  starts as draft, members freeze on submit, officers cannot self-approve,
+  OSA approves, approved cannot go back to submitted) and `T41` (writes into
+  an archived year are refused for officers and OSA alike, service role
+  still passes). Browser sections 21-23 drive the whole flow: OSA publishes
+  an item, the officer uploads (pending badge), OSA approves (approved
+  badge, another org sees no upload); the officer submits the turnover list
+  (With OSA badge, frozen editor), OSA approves (Approved badge); super
+  admin creates a past year, archives and restores it, the current year
+  refuses archiving, and the rollover creates 2027-2028 as current while
+  archiving 2026-2027 - all cleaned up at the end (submissions + storage,
+  checklist item, officer term, the rolled-over and throwaway years).
+
 ## Testing
 
 ```bash
@@ -738,6 +859,15 @@ Expected results in the RLS smoke test:
   notify RPC reaches exactly the targeted users (targeted officer notified,
   untargeted officer `0 / 0`), is OSA-only (42501), and a direct
   `notifications` insert is still refused (RLS error)
+- **Phase 11 (spec 6):** accreditation - the org sees its own upload (`1`),
+  cross-org status flips hit nothing (`0`), self-approve is refused by the
+  guard (ERROR), replace-while-pending and replace-after-rejection both land
+  back at `pending`, and an approved row is frozen for the org (status stays
+  `approved`); officer terms - the list starts `draft`, freezes its members
+  on submit (`0` edits), officers cannot self-approve (ERROR), OSA approves
+  (`approved`), and approved can never return to `submitted` (ERROR);
+  archived years - writes are refused for officers and OSA alike (ERROR /
+  ERROR) while the service role still passes (`1 / 1`)
 
 Expected results in the browser smoke test (`npm run e2e`):
 
@@ -810,10 +940,22 @@ Expected results in the browser smoke test (`npm run e2e`):
   search box, an empty query shows the prompt, a real query finds the LITS
   organization and the officer's own proposal, and another organization's
   draft proposal stays invisible (RLS)
+- **Phase 11:** OSA publishes a checklist item, the LITS officer uploads a
+  file (`Pending` badge, downloadable through `/api/accreditation/{id}`),
+  OSA approves it (`Approved` badge), and another organization sees the item
+  but no upload of its own (`Not uploaded`); the LITS officers type the
+  incoming officer list and submit it (`With OSA` badge, editor frozen),
+  OSA approves the roster, and the organization sees the `Approved` badge
+  with the editor still frozen; super admin creates a past school year,
+  archives it (`Archived` badge), the current year refuses archiving
+  ("Cannot archive"), the year is restored, and the one-click rollover
+  creates 2027-2028 as current while archiving 2026-2027
 - the throwaway account, proposal, conflicting proposal, report, document,
   requirement, template (both versions + storage), announcement (with its
-  notifications), attachments, the overwritten `membership_count` and (after
-  a failed run) the approval chains are all restored by the cleanup step
+  notifications), accreditation item (upload + storage), officer term
+  (members cascade), the rolled-over and throwaway school years,
+  attachments, the overwritten `membership_count` and (after a failed run)
+  the approval chains are all restored by the cleanup step
 
 ## Security notes
 

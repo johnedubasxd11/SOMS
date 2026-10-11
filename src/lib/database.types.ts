@@ -585,6 +585,25 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"officer_term_members": {
+                  Row: {
+                    "created_at": string,"email": string | null,"full_name": string,"id": string,"position": string,"sort_order": number,"term_id": string,"updated_at": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"email"?: string | null,"full_name": string,"id"?: string,"position": string,"sort_order"?: number,"term_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"email"?: string | null,"full_name"?: string,"id"?: string,"position"?: string,"sort_order"?: number,"term_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "officer_term_members_term_id_fkey"
+      columns: ["term_id"]
+isOneToOne: false
+      referencedRelation: "officer_terms"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"officer_terms": {
                   Row: {
                     "created_at": string,"id": string,"notes": string | null,"organization_id": string,"reviewed_at": string | null,"reviewed_by": string | null,"school_year_id": string,"status": Database["public"]['Enums']["officer_term_status"],"submitted_at": string | null,"submitted_by": string | null,"updated_at": string
@@ -1430,6 +1449,9 @@ isOneToOne: false
 "notify_org_officers":
 { Args: { "p_body"?: string,"p_link"?: string,"p_organization_id": string,"p_title": string,"p_type": Database["public"]['Enums']["notification_type"] }; Returns: string[]
                            },
+"notify_osa_staff":
+{ Args: { "p_body"?: string,"p_link"?: string,"p_title": string,"p_type": Database["public"]['Enums']["notification_type"] }; Returns: number
+                           },
 "notify_user":
 { Args: { "p_body"?: string,"p_link"?: string,"p_record_id"?: string,"p_record_type"?: Database["public"]['Enums']["record_type"],"p_title": string,"p_type": Database["public"]['Enums']["notification_type"],"p_user_id": string }; Returns: string
                            },
@@ -1447,7 +1469,7 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "accreditation_status": "pending"|"accredited"|"conditional"|"not_accredited","accreditation_submission_status": "pending"|"approved"|"rejected","announcement_target_type": "all"|"college"|"organization","approval_step_role": "adviser"|"dean"|"osa_admin","approval_step_status": "pending"|"approved"|"rejected"|"revision_requested"|"cancelled","audit_doc_type": "financial_statement"|"receipt"|"audit_report"|"other","copy_status": "softcopy_only"|"hardcopy_received"|"complete","document_category": "constitution_by_laws"|"resolution"|"memo"|"minutes"|"other","document_kind": "proposal"|"report"|"audit"|"other"|"logo","notification_type": "status_change"|"comment"|"requirement"|"reminder"|"system","officer_term_status": "draft"|"submitted"|"approved"|"rejected","record_type": "activity_proposal"|"accomplishment_report"|"audit_document"|"other_document","requirement_status": "open"|"completed"|"overdue"|"waived","review_action": "created"|"submitted"|"resubmitted"|"withdrawn"|"endorsed"|"commented"|"started_review"|"revision_requested"|"approved"|"rejected"|"hardcopy_received"|"step_approved","semester": "first"|"second"|"summer","submission_status": "draft"|"submitted"|"endorsed"|"under_review"|"revision_requested"|"approved"|"rejected","template_category": "proposal_form"|"liquidation_form"|"accomplishment_report"|"other","user_role": "super_admin"|"osa_admin"|"adviser"|"officer"|"dean"
+            "accreditation_status": "pending"|"accredited"|"conditional"|"not_accredited","accreditation_submission_status": "pending"|"approved"|"rejected","announcement_target_type": "all"|"college"|"organization","approval_step_role": "adviser"|"dean"|"osa_admin","approval_step_status": "pending"|"approved"|"rejected"|"revision_requested"|"cancelled","audit_doc_type": "financial_statement"|"receipt"|"audit_report"|"other","copy_status": "softcopy_only"|"hardcopy_received"|"complete","document_category": "constitution_by_laws"|"resolution"|"memo"|"minutes"|"other","document_kind": "proposal"|"report"|"audit"|"other"|"logo","notification_type": "status_change"|"comment"|"requirement"|"reminder"|"system"|"accreditation"|"turnover","officer_term_status": "draft"|"submitted"|"approved"|"rejected","record_type": "activity_proposal"|"accomplishment_report"|"audit_document"|"other_document","requirement_status": "open"|"completed"|"overdue"|"waived","review_action": "created"|"submitted"|"resubmitted"|"withdrawn"|"endorsed"|"commented"|"started_review"|"revision_requested"|"approved"|"rejected"|"hardcopy_received"|"step_approved","semester": "first"|"second"|"summer","submission_status": "draft"|"submitted"|"endorsed"|"under_review"|"revision_requested"|"approved"|"rejected","template_category": "proposal_form"|"liquidation_form"|"accomplishment_report"|"other","user_role": "super_admin"|"osa_admin"|"adviser"|"officer"|"dean"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -1567,7 +1589,7 @@ export const Constants = {
           }
         },"public": {
           Enums: {
-            "accreditation_status": ["pending", "accredited", "conditional", "not_accredited"],"accreditation_submission_status": ["pending", "approved", "rejected"],"announcement_target_type": ["all", "college", "organization"],"approval_step_role": ["adviser", "dean", "osa_admin"],"approval_step_status": ["pending", "approved", "rejected", "revision_requested", "cancelled"],"audit_doc_type": ["financial_statement", "receipt", "audit_report", "other"],"copy_status": ["softcopy_only", "hardcopy_received", "complete"],"document_category": ["constitution_by_laws", "resolution", "memo", "minutes", "other"],"document_kind": ["proposal", "report", "audit", "other", "logo"],"notification_type": ["status_change", "comment", "requirement", "reminder", "system"],"officer_term_status": ["draft", "submitted", "approved", "rejected"],"record_type": ["activity_proposal", "accomplishment_report", "audit_document", "other_document"],"requirement_status": ["open", "completed", "overdue", "waived"],"review_action": ["created", "submitted", "resubmitted", "withdrawn", "endorsed", "commented", "started_review", "revision_requested", "approved", "rejected", "hardcopy_received", "step_approved"],"semester": ["first", "second", "summer"],"submission_status": ["draft", "submitted", "endorsed", "under_review", "revision_requested", "approved", "rejected"],"template_category": ["proposal_form", "liquidation_form", "accomplishment_report", "other"],"user_role": ["super_admin", "osa_admin", "adviser", "officer", "dean"]
+            "accreditation_status": ["pending", "accredited", "conditional", "not_accredited"],"accreditation_submission_status": ["pending", "approved", "rejected"],"announcement_target_type": ["all", "college", "organization"],"approval_step_role": ["adviser", "dean", "osa_admin"],"approval_step_status": ["pending", "approved", "rejected", "revision_requested", "cancelled"],"audit_doc_type": ["financial_statement", "receipt", "audit_report", "other"],"copy_status": ["softcopy_only", "hardcopy_received", "complete"],"document_category": ["constitution_by_laws", "resolution", "memo", "minutes", "other"],"document_kind": ["proposal", "report", "audit", "other", "logo"],"notification_type": ["status_change", "comment", "requirement", "reminder", "system", "accreditation", "turnover"],"officer_term_status": ["draft", "submitted", "approved", "rejected"],"record_type": ["activity_proposal", "accomplishment_report", "audit_document", "other_document"],"requirement_status": ["open", "completed", "overdue", "waived"],"review_action": ["created", "submitted", "resubmitted", "withdrawn", "endorsed", "commented", "started_review", "revision_requested", "approved", "rejected", "hardcopy_received", "step_approved"],"semester": ["first", "second", "summer"],"submission_status": ["draft", "submitted", "endorsed", "under_review", "revision_requested", "approved", "rejected"],"template_category": ["proposal_form", "liquidation_form", "accomplishment_report", "other"],"user_role": ["super_admin", "osa_admin", "adviser", "officer", "dean"]
           }
         }
 } as const

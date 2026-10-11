@@ -152,6 +152,8 @@ export const NOTIFICATION_LABELS: Record<NotificationType, string> = {
   requirement: 'Requirement',
   reminder: 'Reminder',
   system: 'System',
+  accreditation: 'Accreditation',
+  turnover: 'Officer turnover',
 };
 
 export type RequirementStatus = Database['public']['Enums']['requirement_status'];
@@ -200,4 +202,41 @@ export const ANNOUNCEMENT_TARGET_LABELS: Record<AnnouncementTargetType, string> 
   all: 'Everyone',
   college: 'College',
   organization: 'Organization',
+};
+
+export type AccreditationSubmissionStatus =
+  Database['public']['Enums']['accreditation_submission_status'];
+
+export const ACCREDITATION_SUBMISSION_LABELS: Record<
+  AccreditationSubmissionStatus,
+  string
+> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+};
+
+export const ACCREDITATION_SUBMISSION_TONE: Record<
+  AccreditationSubmissionStatus,
+  string
+> = {
+  pending: 'bg-amber-500/15 text-amber-700',
+  approved: 'bg-emerald-500/15 text-emerald-700',
+  rejected: 'bg-destructive/15 text-destructive',
+};
+
+export type OfficerTermStatus = Database['public']['Enums']['officer_term_status'];
+
+export const OFFICER_TERM_LABELS: Record<OfficerTermStatus, string> = {
+  draft: 'Draft',
+  submitted: 'With OSA',
+  approved: 'Approved',
+  rejected: 'Rejected',
+};
+
+export const OFFICER_TERM_TONE: Record<OfficerTermStatus, string> = {
+  draft: 'bg-muted text-muted-foreground',
+  submitted: 'bg-blue-500/15 text-blue-700',
+  approved: 'bg-emerald-500/15 text-emerald-700',
+  rejected: 'bg-destructive/15 text-destructive',
 };

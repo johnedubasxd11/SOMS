@@ -631,3 +631,154 @@ select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits'
 insert into announcements (title, body, target_type, created_by)
 values ('T38 officer announcement', 'Should be refused.', 'all', :'officer_lits');
 rollback;
+
+-- ---------------------------------------------------------------------------
+-- Phase 6 - accreditation checklist (org uploads, OSA approves, guards hold)
+-- ---------------------------------------------------------------------------
+
+\echo '### T39 accreditation - upload / review guards (expect 1 / 0 / ERROR / pending / pending / 0 / approved)'
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+-- OSA publishes one checklist item for the current year.
+insert into accreditation_items (school_year_id, title, description, sort_order, is_required)
+values (:'current_year', 'T39 Constitution', 'Notarized copy.', 99, true)
+returning id as t39_item \gset
+
+-- LITS officer uploads (always inserted as pending).
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+insert into accreditation_submissions (item_id, organization_id, storage_path, file_name, mime_type, size_bytes, submitted_by)
+values (:'t39_item', :'lits_org', :'lits_org' || '/accreditation/t39/v1.pdf', 'constitution.pdf', 'application/pdf', 100, :'officer_lits')
+returning id as t39_sub \gset
+select 'officer_sees_own_upload' as check, count(*)::text as value
+  from accreditation_submissions where id = :'t39_sub';
+
+-- AFPHI officer cannot see nor touch the LITS upload.
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_afphi', 'role', 'authenticated')::text, true);
+update accreditation_submissions set status = 'approved' where id = :'t39_sub';
+select 'cross_org_status_flips' as check, count(*)::text as value
+  from accreditation_submissions where id = :'t39_sub' and status = 'approved';
+
+-- The uploading org cannot self-approve (guard trigger).
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+update accreditation_submissions set status = 'approved' where id = :'t39_sub';
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+insert into accreditation_items (school_year_id, title, sort_order)
+values (:'current_year', 'T39b By-Laws', 100)
+returning id as t39_item \gset
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+insert into accreditation_submissions (item_id, organization_id, storage_path, file_name, mime_type, size_bytes, submitted_by)
+values (:'t39_item', :'lits_org', :'lits_org' || '/accreditation/t39b/v1.pdf', 'by-laws.pdf', 'application/pdf', 100, :'officer_lits')
+returning id as t39_sub \gset
+-- Replace while pending: back to pending with a new storage path (allowed).
+update accreditation_submissions
+   set storage_path = :'lits_org' || '/accreditation/t39b/v2.pdf', status = 'pending'
+ where id = :'t39_sub';
+select 'replace_pending_stays_pending' as check, status::text as value
+  from accreditation_submissions where id = :'t39_sub';
+-- OSA rejects with remarks; the org replaces a rejected upload (back to pending).
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+update accreditation_submissions set status = 'rejected', remarks = 'Illegible.', reviewed_by = :'osa_admin', reviewed_at = now()
+ where id = :'t39_sub';
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+update accreditation_submissions
+   set storage_path = :'lits_org' || '/accreditation/t39b/v3.pdf', status = 'pending', remarks = null
+ where id = :'t39_sub';
+select 'replace_rejected_back_to_pending' as check, status::text as value
+  from accreditation_submissions where id = :'t39_sub';
+-- Once OSA approves, the row freezes for the organization (RLS using drops it).
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+update accreditation_submissions set status = 'approved', reviewed_by = :'osa_admin', reviewed_at = now()
+ where id = :'t39_sub';
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+update accreditation_submissions set status = 'pending' where id = :'t39_sub';
+select 'approved_frozen_for_org' as check, status::text as value
+  from accreditation_submissions where id = :'t39_sub';
+rollback;
+
+-- ---------------------------------------------------------------------------
+-- Phase 6 - officer-term turnover (draft <-> submitted, members frozen)
+-- ---------------------------------------------------------------------------
+
+\echo '### T40 officer terms - transitions + member freeze (expect draft / submitted / 2 / 0 / ERROR / approved)'
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+-- LITS officers create the draft list and two members.
+insert into officer_terms (organization_id, school_year_id, status, submitted_by)
+values (:'lits_org', :'current_year', 'draft', :'officer_lits')
+returning id as t40_term \gset
+insert into officer_term_members (term_id, full_name, position, sort_order)
+values (:'t40_term', 'T40 President', 'President', 0),
+       (:'t40_term', 'T40 Secretary', 'Secretary', 1);
+select 'term_starts_draft' as check, status::text as value from officer_terms where id = :'t40_term';
+select 'member_count' as check, count(*)::text as value from officer_term_members where term_id = :'t40_term';
+-- Submit: draft -> submitted is allowed for officers.
+update officer_terms set status = 'submitted', submitted_at = now() where id = :'t40_term';
+select 'submitted' as check, status::text as value from officer_terms where id = :'t40_term';
+-- Members are frozen once the list leaves draft (RLS: 0 rows, no error).
+update officer_term_members set full_name = 'T40 Hacked' where term_id = :'t40_term';
+select 'frozen_member_edits' as check, count(*)::text as value
+  from officer_term_members where term_id = :'t40_term' and full_name = 'T40 Hacked';
+-- Officers cannot approve their own list (guard trigger).
+update officer_terms set status = 'approved' where id = :'t40_term';
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_afphi', 'role', 'authenticated')::text, true);
+insert into officer_terms (organization_id, school_year_id, status, submitted_by)
+values (:'afphi_org', :'current_year', 'draft', :'officer_afphi')
+returning id as t40_term \gset
+insert into officer_term_members (term_id, full_name, position, sort_order)
+values (:'t40_term', 'T40 AFPHI President', 'President', 0);
+update officer_terms set status = 'submitted', submitted_at = now() where id = :'t40_term';
+-- OSA approves the submitted list.
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+update officer_terms set status = 'approved', reviewed_by = :'osa_admin', reviewed_at = now() where id = :'t40_term';
+select 'osa_approved' as check, status::text as value from officer_terms where id = :'t40_term';
+-- OSA cannot move approved back to submitted (guard) - only to draft.
+update officer_terms set status = 'submitted' where id = :'t40_term';
+rollback;
+
+-- ---------------------------------------------------------------------------
+-- Phase 6 - archived school years are read-only (trigger on every year table)
+-- ---------------------------------------------------------------------------
+
+\echo '### T41 archived year - writes refused, service role still passes (expect ERROR / ERROR / 1 / 1)'
+begin;
+-- Seed one archived year (postgres bypasses RLS; the guard skips without a uid).
+insert into school_years (name, start_date, end_date, is_current, is_archived)
+values ('1999-2000', '1999-06-01', '2000-03-31', false, true)
+returning id as t41_year \gset
+
+savepoint t41_officer;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'officer_lits', 'role', 'authenticated')::text, true);
+-- Insert into the archived year is refused for a signed-in user.
+insert into requirements (organization_id, school_year_id, title)
+values (:'lits_org', :'t41_year', 'T41 requirement');
+rollback to t41_officer;
+
+savepoint t41_osa;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', :'osa_admin', 'role', 'authenticated')::text, true);
+-- Even OSA cannot write into an archived year while signed in.
+insert into accreditation_items (school_year_id, title)
+values (:'t41_year', 'T41 archived item');
+rollback to t41_osa;
+
+-- Back to the postgres session: service role / migrations (auth.uid() is null)
+-- may still write - archival data fixes.
+reset role;
+insert into requirements (organization_id, school_year_id, title)
+values (:'lits_org', :'t41_year', 'T41 backfill')
+returning id as t41_req \gset
+select 'service_role_insert' as check, count(*)::text as value from requirements where id = :'t41_req';
+update requirements set title = 'T41 backfill v2' where id = :'t41_req';
+select 'service_role_update' as check, title as value from requirements where id = :'t41_req';
+rollback;
