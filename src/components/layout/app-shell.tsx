@@ -6,6 +6,7 @@ import { useState } from 'react';
 import {
   BadgeCheck,
   BarChart3,
+  BookOpen,
   BookOpenCheck,
   CalendarDays,
   CalendarRange,
@@ -55,6 +56,7 @@ const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard,
   FileText,
   ClipboardCheck,
+  BookOpen,
   BookOpenCheck,
   FolderOpen,
   ListChecks,
@@ -179,7 +181,7 @@ function UserMenu({ profile }: { profile: ShellProfile }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-9 gap-2 pl-1.5">
+        <Button variant="ghost" className="h-9 gap-2 pl-1.5" data-testid="user-menu-trigger">
           <Avatar className="size-7">
             <AvatarFallback className="text-[11px]">
               {initials(profile.full_name)}

@@ -109,9 +109,11 @@ export function RolloverSchoolYearButton({ hasCurrent }: { hasCurrent: boolean }
           timer.current = setTimeout(() => setArmed(false), 3000);
           return;
         }
+        // The action redirects (revalidatePath + new current year), so the
+        // component can unmount mid-flight. Never set state after invoking it -
+        // the armed flag simply disappears with the page.
         if (timer.current) clearTimeout(timer.current);
         startTransition(() => formAction(new FormData()));
-        setArmed(false);
       }}
       className="inline-flex"
     >

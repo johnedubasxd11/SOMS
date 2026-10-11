@@ -30,6 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/templates', label: 'Form Templates', icon: 'FileSpreadsheet', roles: null, group: 'main' },
   { href: '/organizations', label: 'Organizations', icon: 'Users', roles: null, group: 'main' },
   { href: '/reviews', label: 'My Approvals', icon: 'CheckCheck', roles: ['adviser', 'dean'], group: 'main' },
+  { href: '/guide', label: 'User Guide', icon: 'BookOpen', roles: null, group: 'main' },
 
   { href: '/osa/reviews', label: 'Review Queue', icon: 'Inbox', roles: ['osa_admin', 'super_admin'], group: 'osa' },
   { href: '/osa/accreditation', label: 'Accreditation Review', icon: 'BadgeCheck', roles: ['osa_admin', 'super_admin'], group: 'osa' },

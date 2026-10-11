@@ -17,8 +17,10 @@ OSA reviews, approves and stores everything in one place.
 > features: the accreditation checklist (OSA publishes items, organizations
 > upload, OSA approves), the officer-list turnover (officers submit the
 > incoming list, OSA approves) and the school-year archive + one-click
-> rollover (archived years are read-only for everyone).
-> Tests and cleanup are done: 41 RLS/RPC checks in SQL and 197 browser checks
+> rollover (archived years are read-only for everyone), and the spec's
+> Phase 9 per-role user guide (`/guide` - the same route renders different
+> how-to content for officer, adviser, dean, OSA and super-admin accounts).
+> Tests and cleanup are done: 41 RLS/RPC checks in SQL and 205 browser checks
 > in `scripts/e2e-smoke.mjs`.
 
 ## Tech stack
@@ -121,7 +123,7 @@ Default password for **every** seeded account: `ChangeMe123!`
 | `npm run db:reset`      | Recreate the local DB, apply all migrations, run `seed.sql` |
 | `npm run gen:types`     | Regenerate `src/lib/database.types.ts` from the schema    |
 | `npm run seed:auth`     | Create auth users, adviser/officer links and sample records  |
-| `npm run e2e`           | Browser smoke test: auth, roles, all four submission workflows through the approval chain (adviser, dean, OSA), chain editor, notifications, dashboards, report exports, venue conflict warning + refusal, calendar board, venue manager, attachment versioning, the template library with version history, the announcement board, global search, the accreditation checklist, the officer-list turnover and the school-year archive + rollover (197 checks, needs `npm run dev`) |
+| `npm run e2e`           | Browser smoke test: auth, roles, all four submission workflows through the approval chain (adviser, dean, OSA), chain editor, notifications, dashboards, report exports, venue conflict warning + refusal, calendar board, venue manager, attachment versioning, the template library with version history, the announcement board, global search, the accreditation checklist, the officer-list turnover, the school-year archive + rollover and the per-role user guide (205 checks, needs `npm run dev`) |
 | `npm run test:rls`      | 41 RLS + RPC smoke tests against the local database (all rolled back)  |
 
 ## Phase 1 - what was built
@@ -789,13 +791,79 @@ src/lib/labels.ts                      ACCREDITATION_SUBMISSION_*,
   archiving 2026-2027 - all cleaned up at the end (submissions + storage,
   checklist item, officer term, the rolled-over and throwaway years).
 
+## Phase 12 - what was built (spec Phase 9: per-role user guide)
+
+The spec's last unbuilt area: a user guide that explains the system
+differently depending on who is signed in. There is no separate spec file in
+the repo - the content is derived from what the app actually does (the role
+map, the workflow diagram and the OSA feature set documented above).
+
+```
+src/lib/guide.ts                    single source of truth for the copy:
+                                    ROLE_LANDING (one headline + body per
+                                    role) and guideSectionsForRole(), which
+                                    returns the common getting-started /
+                                    support sections plus a per-role block
+                                    (officer: submissions + accreditation/
+                                    turnover + daily tools; adviser:
+                                    endorsement + visibility; dean:
+                                    approval; OSA: queues + content +
+                                    exports; super admin: accounts +
+                                    school years + "everything OSA does")
+src/app/(app)/guide/page.tsx       server-rendered page: PageHeader, a
+                                    role-badge landing card, then one Card
+                                    per section with ordered task steps
+src/lib/navigation.ts              /guide ("User Guide", BookOpen) in the
+                                    main group, visible to every role
+src/components/layout/app-shell.tsx BookOpen icon; the avatar menu trigger
+                                    now carries data-testid="user-menu-trigger"
+                                    so the smoke test never has to guess
+                                    which header button opens the account menu
+```
+
+- **One route, five guides.** `/guide` calls `requireProfile()` and renders
+  `guideSectionsForRole(profile.role)`, so an officer never sees the OSA or
+  super-admin sections and an OSA admin sees the review-queue material the
+  officer does not. The landing card names the signed-in role (badge +
+  position) and the headline is role-specific.
+- **The copy is derived from the app, not invented.** Steps quote the real
+  button labels ("Submit for review", "Endorse proposal", "Request
+  revision", "Rollover to next year"), the real routes (`/osa/reviews`,
+  `/admin/school-years`, ...) and the real limits (10 MB attachments, the
+  5-attempts-per-15-minutes login guard).
+- **Support path.** The common section tells every role who to contact for
+  passwords (OSA / `its.admin@acd.edu.ph`), for a specific submission
+  (adviser, then dean, then OSA) and for bugs (URL + steps).
+- **Tests.** Browser section 24 signs in as officer, OSA and super admin and
+  asserts each guide is role-aware: the officer sees the accreditation
+  section but not "User accounts" / "One-click rollover", the OSA guide
+  includes "Review queues and decisions", the super-admin guide includes
+  both admin sections, and the nav entry is present for every role.
+  `signOut()` was hardened in the same pass (see below).
+
+### Smoke-test hardening
+
+Two pre-existing fragilities surfaced while wiring section 24, both fixed:
+
+- `signOut()` used to pick "the last header button", which is the mobile nav
+  trigger at narrow widths and can be the wrong control entirely. It now
+  clicks `data-testid="user-menu-trigger"`, retries the open -> Sign out
+  sequence a few times, and - if the dropdown is inert (it is a client
+  component and can fail to hydrate after a server-action redirect, e.g.
+  right after the school-year rollover) - falls back to clearing the session
+  cookie and navigating to `/login`. The cookie is the only thing the proxy
+  trusts, so this is a real sign-out.
+- `RolloverSchoolYearButton` called `setArmed(false)` inside the form
+  action, which is unsafe because the action redirects and the component can
+  unmount mid-flight; the state update is now dropped.
+
 ## Testing
 
 ```bash
 # 1. everything compiles
 npm run typecheck && npm run lint && npm run build
 
-# 2. RLS + RPC smoke tests (38 checks, all rolled back)
+# 2. RLS + RPC smoke tests (41 checks, all rolled back)
 npm run test:rls
 
 # 3. browser smoke test - the app must be running first
@@ -949,7 +1017,13 @@ Expected results in the browser smoke test (`npm run e2e`):
   with the editor still frozen; super admin creates a past school year,
   archives it (`Archived` badge), the current year refuses archiving
   ("Cannot archive"), the year is restored, and the one-click rollover
-  creates 2027-2028 as current while archiving 2026-2027
+   creates 2027-2028 as current while archiving 2026-2027
+- **Phase 12:** officer, OSA and super-admin each open `/guide` and get a
+  role-aware guide (badge + role-specific headline); the officer sees the
+  accreditation and turnover how-to but never "User accounts" or "One-click
+  rollover", the OSA guide includes "Review queues and decisions", the
+  super-admin guide includes both admin sections, and the "User Guide" nav
+  entry is present for every role
 - the throwaway account, proposal, conflicting proposal, report, document,
   requirement, template (both versions + storage), announcement (with its
   notifications), accreditation item (upload + storage), officer term

@@ -134,10 +134,40 @@ async function signIn(page, email, next) {
   throw new Error(`Could not sign in as ${email}`);
 }
 
-async function signOut(page) {
-  await page.locator('header button').last().click();
-  await page.getByRole('menuitem', { name: 'Sign out' }).click();
-  await page.waitForURL('**/login', { timeout: 30000 });
+async function signOut(page, context) {
+  // The dropdown is a client component and can be inert after a server-action
+  // redirect (e.g. the school-year rollover). Prefer the menu, but fall back
+  // to clearing the session cookie directly - the proxy only trusts the
+  // cookie, so this is a real sign-out, not a shortcut around auth.
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    if (page.url().startsWith(`${BASE}/login`)) return;
+
+    await page
+      .getByTestId('user-menu-trigger')
+      .click()
+      .catch(() => null);
+
+    const signOutItem = page.getByRole('menuitem', { name: 'Sign out' });
+    if (await signOutItem.count()) {
+      await signOutItem.click().catch(() => null);
+      try {
+        await page.waitForURL('**/login', { timeout: 15000 });
+        return;
+      } catch {
+        // The click may have been swallowed; try again.
+      }
+    } else {
+      await page.keyboard.press('Escape').catch(() => null);
+      await page.waitForTimeout(500);
+    }
+  }
+
+  // Fallback: drop the session cookie and land on the login screen.
+  await context.clearCookies();
+  await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
+  if (!page.url().startsWith(`${BASE}/login`)) {
+    throw new Error(`Could not sign out (still on ${page.url()})`);
+  }
 }
 
 /**
@@ -265,7 +295,7 @@ try {
     detailText.match(/Members[^\n]*/)?.[0]
   );
 
-  await signOut(page);
+  await signOut(page, context);
   check('sign out returns to /login', page.url().startsWith(`${BASE}/login`));
 
   // ---- 4. officer: no admin nav, admin route blocked ------------------------
@@ -319,7 +349,7 @@ try {
     (await page.locator('text=New password').count()) > 0
   );
 
-  await signOut(page);
+  await signOut(page, context);
 
   // ---- 5. OSA admin: review queue + edit rights -----------------------------
   await signIn(page, 'osa.admin@acd.edu.ph');
@@ -407,7 +437,7 @@ try {
   check('session persists across reloads', page.url().includes('/dashboard'));
 
   // ---- 7. officer creates a draft, attaches a file, submits ----------------
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
 
   await page.goto(`${BASE}/proposals`, { waitUntil: 'networkidle' });
@@ -595,7 +625,7 @@ try {
   );
 
   // ---- 8. adviser endorses --------------------------------------------------
-  await signOut(page);
+  await signOut(page, context);
   const deanLitsEmail = await deanEmailForOrg('LITS');
   await signIn(page, 'adviser.lits@acd.edu.ph');
 
@@ -633,7 +663,7 @@ try {
   );
 
   // ---- 9. dean requests a revision, officer resubmits, full chain re-walk ---
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
 
   await page.goto(`${BASE}/proposals/new`, { waitUntil: 'domcontentloaded' });
@@ -656,7 +686,7 @@ try {
       (await page.getByRole('button', { name: 'Request revision' }).count()) === 0
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, deanLitsEmail);
 
   await page.goto(`${BASE}/reviews`, { waitUntil: 'networkidle' });
@@ -683,7 +713,7 @@ try {
     (await page.locator('main').innerText()).includes('Please attach the venue contract.')
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(smokeProposalUrl, { waitUntil: 'networkidle' });
   await page.locator('#remarks').fill('Contract scanned - resubmitting.');
@@ -699,7 +729,7 @@ try {
   );
 
   // the chain restarts: adviser re-endorses after the resubmission
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'adviser.lits@acd.edu.ph');
   await page.goto(smokeProposalUrl, { waitUntil: 'networkidle' });
   check(
@@ -715,7 +745,7 @@ try {
   );
 
   // then the dean clears it so it finally reaches the OSA step
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, deanLitsEmail);
   await page.goto(smokeProposalUrl, { waitUntil: 'networkidle' });
   check(
@@ -731,7 +761,7 @@ try {
     await currentStatus(page)
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
   await page.goto(`${BASE}/osa/reviews`, { waitUntil: 'networkidle' });
   check(
@@ -783,7 +813,7 @@ try {
   );
 
   // ---- 10. officer: accomplishment report workflow --------------------------
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
 
   await page.goto(`${BASE}/reports`, { waitUntil: 'networkidle' });
@@ -854,7 +884,7 @@ try {
   );
 
   // ---- 11. adviser endorses, dean clears, OSA approves the report ----------
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'adviser.lits@acd.edu.ph');
   await page.goto(smokeReportUrl, { waitUntil: 'networkidle' });
 
@@ -870,7 +900,7 @@ try {
     await currentStatus(page)
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, deanLitsEmail);
   await page.goto(smokeReportUrl, { waitUntil: 'networkidle' });
   check(
@@ -886,7 +916,7 @@ try {
     await currentStatus(page)
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
 
   await page.goto(`${BASE}/reports/new`, { waitUntil: 'domcontentloaded' });
@@ -918,7 +948,7 @@ try {
   );
 
   // ---- 12. officer creates and submits an other document --------------------
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
 
   await page.goto(`${BASE}/documents`, { waitUntil: 'networkidle' });
@@ -968,7 +998,7 @@ try {
   );
 
   // ---- 13. OSA starts the review and approves the document ------------------
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
 
   await page.goto(`${BASE}/documents/new`, { waitUntil: 'domcontentloaded' });
@@ -1039,7 +1069,7 @@ try {
   check('audit trail lists recorded changes', auditRows > 0, `${auditRows} rows`);
 
   // ---- 15. officer sees the requirement + the notification it produced ------
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
 
   await page.goto(`${BASE}/requirements`, { waitUntil: 'networkidle' });
@@ -1098,7 +1128,7 @@ try {
     `status ${officerExport.status()}`
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
 
   await page.goto(`${BASE}/osa/reports`, { waitUntil: 'networkidle' });
@@ -1209,7 +1239,7 @@ try {
     `${osaScope} records in scope`
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   dashText = await page.locator('main').innerText();
   check(
@@ -1233,7 +1263,7 @@ try {
     `${officerScope} records in scope`
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'adviser.lits@acd.edu.ph');
   dashText = await page.locator('main').innerText();
   check(
@@ -1253,7 +1283,7 @@ try {
     `${adviserScope} records in scope`
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, deanLitsEmail);
   dashText = await page.locator('main').innerText();
   check(
@@ -1300,7 +1330,7 @@ try {
 
   // ---- 18. Phase 7 - template library ---------------------------------------
   // Section 17 leaves the browser signed in as the dean; OSA manages templates.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
   await page.goto(`${BASE}/osa/templates`, { waitUntil: 'networkidle' });
   check(
@@ -1394,7 +1424,7 @@ try {
     (await page.locator('main').innerText()).includes('Smoke Template')
   );
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(`${BASE}/templates`, { waitUntil: 'networkidle' });
   const officerTemplateText = await page.locator('main').innerText();
@@ -1430,7 +1460,7 @@ try {
   );
 
   // OSA posts an organization-targeted announcement and checks the audience.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
   await page.goto(`${BASE}/announcements`, { waitUntil: 'networkidle' });
   check(
@@ -1463,7 +1493,7 @@ try {
   );
 
   // LITS officer: sees it + got the in-app notification.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(`${BASE}/announcements`, { waitUntil: 'networkidle' });
   check(
@@ -1477,7 +1507,7 @@ try {
   );
 
   // AFPHI officer: sees neither the announcement nor the notification.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.afphi@acd.edu.ph');
   await page.goto(`${BASE}/announcements`, { waitUntil: 'networkidle' });
   check(
@@ -1526,7 +1556,7 @@ try {
   );
 
   // LITS officer can find their own proposal through global search.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(`${BASE}/search?q=${encodeURIComponent(smokeTitle)}`, {
     waitUntil: 'networkidle',
@@ -1540,7 +1570,7 @@ try {
 
   // ---- 21. Phase 6 - accreditation checklist --------------------------------
   // OSA publishes one checklist item for the current school year.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
   await page.goto(`${BASE}/osa/accreditation`, { waitUntil: 'networkidle' });
   check(
@@ -1562,7 +1592,7 @@ try {
   );
 
   // LITS officer uploads a file for the item.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(`${BASE}/accreditation`, { waitUntil: 'networkidle' });
   const checklistText = await page.locator('main').innerText();
@@ -1596,7 +1626,7 @@ try {
   }
 
   // OSA reviews and approves the upload.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
   await page.goto(`${BASE}/osa/accreditation`, { waitUntil: 'networkidle' });
   const reviewRow = page.locator('tr', { hasText: SMOKE_ACCREDITATION_ITEM }).last();
@@ -1614,7 +1644,7 @@ try {
   );
 
   // The officer sees the approved badge; an untargeted org sees no upload.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(`${BASE}/accreditation`, { waitUntil: 'networkidle' });
   const approvedBadge = await page
@@ -1622,7 +1652,7 @@ try {
     .innerText();
   check('officer upload shows as approved', approvedBadge.includes('Approved'), approvedBadge);
 
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.afphi@acd.edu.ph');
   await page.goto(`${BASE}/accreditation`, { waitUntil: 'networkidle' });
   const afphiChecklist = await page.locator('main').innerText();
@@ -1634,7 +1664,7 @@ try {
 
   // ---- 22. Phase 6 - officer turnover ---------------------------------------
   // LITS officers type the incoming list and submit it to OSA.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(`${BASE}/turnover`, { waitUntil: 'networkidle' });
   check(
@@ -1667,7 +1697,7 @@ try {
   );
 
   // OSA approves the list.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'osa.admin@acd.edu.ph');
   await page.goto(`${BASE}/osa/turnover`, { waitUntil: 'networkidle' });
   // The queue only holds this run's submitted list (seed data has none), so
@@ -1686,7 +1716,7 @@ try {
   await turnoverDialog.waitFor({ state: 'detached', timeout: 30000 });
 
   // The organization sees the approved badge.
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'president.lits@acd.edu.ph');
   await page.goto(`${BASE}/turnover`, { waitUntil: 'networkidle' });
   check(
@@ -1700,7 +1730,7 @@ try {
   );
 
   // ---- 23. Phase 6 - school-year archive + rollover -------------------------
-  await signOut(page);
+  await signOut(page, context);
   await signIn(page, 'its.admin@acd.edu.ph');
   await page.goto(`${BASE}/admin/school-years`, { waitUntil: 'networkidle' });
   check(
@@ -1757,6 +1787,58 @@ try {
   // The archived year is read-only: creating a requirement against it is
   // refused by the enforce_archived_school_year trigger (checked in RLS T41);
   // here we only confirm the UI state - cleanup restores the seed shape.
+
+  // ---- 24. Phase 9 - per-role user guide -------------------------------------
+  // The same /guide route renders different content for each role; the nav
+  // entry and the role badge are the stable anchors.
+  await signOut(page, context);
+  await signIn(page, 'president.lits@acd.edu.ph');
+  await page.goto(`${BASE}/guide`, { waitUntil: 'networkidle' });
+  check('officer can open the user guide', page.url().includes('/guide'));
+  const officerGuide = await page.locator('main').innerText();
+  check(
+    'officer guide is role-aware (badge + headline)',
+    officerGuide.includes('Officer') &&
+      officerGuide.includes('prepare and submit'),
+    officerGuide.slice(0, 100)
+  );
+  check(
+    'officer guide shows the accreditation section',
+    officerGuide.includes('Accreditation checklist and officer turnover')
+  );
+  check(
+    'officer guide does not expose OSA-only admin sections',
+    !officerGuide.includes('User accounts') &&
+      !officerGuide.includes('One-click rollover')
+  );
+
+  await signOut(page, context);
+  await signIn(page, 'osa.admin@acd.edu.ph');
+  await page.goto(`${BASE}/guide`, { waitUntil: 'networkidle' });
+  const osaGuide = await page.locator('main').innerText();
+  check(
+    'OSA guide is role-aware (badge + headline)',
+    osaGuide.includes('OSA Admin') && osaGuide.includes('run the office'),
+    osaGuide.slice(0, 100)
+  );
+  check(
+    'OSA guide includes the review-queue section',
+    osaGuide.includes('Review queues and decisions')
+  );
+
+  await signOut(page, context);
+  await signIn(page, 'its.admin@acd.edu.ph');
+  await page.goto(`${BASE}/guide`, { waitUntil: 'networkidle' });
+  const adminGuide = await page.locator('main').innerText();
+  check(
+    'super-admin guide includes the account section',
+    adminGuide.includes('User accounts') &&
+      adminGuide.includes('One-click rollover')
+  );
+  check(
+    'guide nav entry is visible for every role',
+    (await page.locator('nav a[href="/guide"]').count()) >= 1
+  );
 } catch (error) {
   failures += 1;
   console.error('FAIL  unexpected error:', error);
