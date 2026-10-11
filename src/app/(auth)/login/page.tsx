@@ -53,21 +53,6 @@ export default async function LoginPage({
             ) : null}
 
             <LoginForm next={next} />
-
-            <div className="border-t pt-4 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Demo accounts</p>
-              <p className="mt-1">
-                Super Admin — its.admin@acd.edu.ph
-                <br />
-                OSA Admin — osa.admin@acd.edu.ph
-                <br />
-                Adviser — adviser.lits@acd.edu.ph
-                <br />
-                Officer — president.lits@acd.edu.ph
-                <br />
-                Password — ChangeMe123!
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>

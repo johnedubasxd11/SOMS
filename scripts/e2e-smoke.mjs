@@ -24,7 +24,14 @@ import { chromium } from 'playwright-core';
 import { createClient } from '@supabase/supabase-js';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
-const PASSWORD = process.env.SEED_PASSWORD ?? 'ChangeMe123!';
+// No hardcoded fallback on purpose - a known default password in the source
+// would be a free account on any deployment seeded from this repo. The run
+// script passes --env-file=.env.local, so SEED_PASSWORD comes from there.
+const PASSWORD = process.env.SEED_PASSWORD;
+if (!PASSWORD) {
+  console.error('SEED_PASSWORD is not set - add it to .env.local (see .env.example).');
+  process.exit(1);
+}
 
 /** E-mail of the throwaway account created by this run (removed at the end). */
 let createdEmail = null;
@@ -254,7 +261,7 @@ try {
   await page
     .locator('[role="dialog"] input[name="email"]')
     .fill(createdEmail);
-  await page.locator('[role="dialog"] input[name="password"]').fill('ChangeMe123!');
+  await page.locator('[role="dialog"] input[name="password"]').fill(PASSWORD);
   await page.locator('[role="dialog"] input[name="position"]').fill('Tester');
   // officers must be attached to an organization (zod superRefine)
   await page.locator('[role="dialog"]').getByRole('combobox').nth(1).click();

@@ -87,7 +87,7 @@ npm run dev                         # http://localhost:3000
    | `NEXT_PUBLIC_APP_URL`           | `http://localhost:3000` (or your origin)  |
    | `RESEND_API_KEY` (optional)     | https://resend.com - e-mail notifications |
    | `CRON_SECRET` (optional)        | any long random string - reminder cron    |
-   | `SEED_PASSWORD` (optional)      | password given to seeded accounts         |
+   | `SEED_PASSWORD` (required)      | password given to seeded accounts         |
 
 4. Run `npm run seed:auth` to create the accounts, then `npm run gen:types`
    (hosted: add `--db-url <connection-string>` or run it right after
@@ -95,8 +95,9 @@ npm run dev                         # http://localhost:3000
 
 ## Seeded accounts
 
-Default password for **every** seeded account: `ChangeMe123!`
-(override with `SEED_PASSWORD` in `.env.local`, change the accounts after first login).
+Every seeded account receives the password you set in `SEED_PASSWORD`
+(`.env.local`) - there is no baked-in default. Change the accounts after
+first login.
 
 | Role         | E-mail                                |
 | ------------ | ------------------------------------- |

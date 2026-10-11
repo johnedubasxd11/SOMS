@@ -41,12 +41,15 @@ loadEnvFile();
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
 const serviceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SERVICE_ROLE_KEY;
-const password = process.env.SEED_PASSWORD ?? 'ChangeMe123!';
+// No hardcoded fallback on purpose: a known default password in the source
+// would be a free account on any deployment seeded from this repo.
+const password = process.env.SEED_PASSWORD;
 
-if (!url || !serviceKey) {
+if (!url || !serviceKey || !password) {
   console.error(
-    'Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.\n' +
-      'Start Supabase (npx supabase start) and copy `npx supabase status -o env` into .env.local'
+    'Missing NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY or SEED_PASSWORD.\n' +
+      'Start Supabase (npx supabase start), copy `npx supabase status -o env` into .env.local,\n' +
+      'and set SEED_PASSWORD to the password every seeded account should receive.'
   );
   process.exit(1);
 }
