@@ -1059,10 +1059,11 @@ Expected results in the browser smoke test (`npm run e2e`):
 5. One adviser **and** one officer (President) account per organization were
    seeded - tell me if you want every officer position instead.
 6. Brand colours now follow ACD's official blue (the Pantone 301 family,
-   `#004B87`) and the shell/login use a geometric star-and-A school mark
-   (`src/components/layout/school-mark.tsx`). The real ACD seal is a
-   trademark of the college - drop the image into `src/app/icon.svg` /
-   replace the component when the office supplies the file.
+   `#004B87`) and the shell/login render the OSA seal
+   (`public/acdlogo.png` through `src/components/layout/school-mark.tsx`);
+   the favicon (`src/app/favicon.ico`, `src/app/icon.png`) is generated
+   from the same seal. Replace `public/acdlogo.png` (and re-run the icon
+   generation) if the office supplies an updated file.
 7. There is **no separate `comments` table**: the spec's comment thread per
    submission is the `review_logs` rows with `action = 'commented'`
    (written by `add_review_comment()`), so one timeline holds both status
