@@ -30,9 +30,9 @@ export default async function LoginPage({
           <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
             Assumption College of Davao
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight">SOMS</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Student Organization Management System</h1>
           <p className="text-sm text-muted-foreground">
-            Student Organization Management System
+            "Onward, Onward Assumption"
           </p>
         </div>
 
