@@ -80,7 +80,7 @@ async function ensureUser(user: SeedUser): Promise<string> {
 
   if (!error && data.user) return data.user.id;
 
-  if (error && /already registered/i.test(error.message)) {
+  if (error && /already (been )?registered/i.test(error.message)) {
     // Reuse the existing account and make sure the password is known.
     const list = await db.auth.admin.listUsers({ perPage: 1000, page: 1 });
     const existing = list.data.users.find((u) => u.email === user.email);
