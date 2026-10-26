@@ -44,11 +44,21 @@ export async function proxy(request: NextRequest) {
 
   // Only hit the network when a session cookie exists, otherwise every
   // anonymous request (assets included) would trigger a round trip.
-  if (hasSession) {
+if (hasSession) {
     try {
       await supabase.auth.getUser(); // refreshes the tokens when needed
-    } catch {
-      // Network/auth error: fall through - the page layer re-checks.
+} catch (error) {
+      if (
+      (error as { __isAuthError?: true }).__isAuthError === true
+    ) {
+        // Session is corrupted (e.g. after repeated failed logins);
+        // clear the Supabase auth cookies so the user goes to login fresh.
+        request.cookies.set('sb-at-token', '');
+        request.cookies.set('sb-refresh-token', '');
+        request.cookies.set('sb-session', '');
+      } else {
+        throw error;
+      }
     }
   }
 
