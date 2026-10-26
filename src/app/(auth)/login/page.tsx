@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { LoginForm } from '@/components/auth/login-form';
 import { SchoolMark } from '@/components/layout/school-mark';
 import { getCurrentUser } from '@/lib/auth';
+import { createClient } from '@/lib/supabase/server';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Card,
@@ -18,7 +19,26 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string; error?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (user) redirect('/dashboard');
+
+  if (user) {
+    const supabase = await createClient();
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabase
+      .from('profiles')
+      .select('is_active')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      console.error('[LoginPage] profile fetch error:', profileError);
+    } else if (profile && profile.is_active) {
+      redirect('/dashboard');
+    } else {
+      await supabase.auth.signOut();
+    }
+  }
 
   const { next, error } = await searchParams;
 

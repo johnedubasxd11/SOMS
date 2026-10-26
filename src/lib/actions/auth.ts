@@ -30,14 +30,15 @@ export async function loginAction(
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
   }
 
-  const { email, password, next } = parsed.data;
+  const { password, next } = parsed.data;
+  const email = parsed.data.email.toLowerCase().trim();
   const normalizedNext = next && next.startsWith('/') ? next : '/dashboard';
 
   const supabase = await createClient();
 
   // ---- rate limiting ------------------------------------------------------
   const { data: limit, error: limitError } = await supabase.rpc('check_rate_limit', {
-    p_key: `login:${email.toLowerCase()}`,
+    p_key: `login:${email}`,
     p_max_attempts: 5,
     p_window_seconds: 900,
     p_block_seconds: 900,
